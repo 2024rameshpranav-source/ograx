@@ -1,0 +1,9 @@
+location_name,observation_time,rain_last_1h_mm,rain_last_3h_mm,rain_last_6h_mm,rain_last_24h_mm,hourly_records_available,current_weather_time,weather_data_age_min,current_precipitation_mm,data_status,rainfall_data_age_min,data_freshness_status,rain_next_1h_mm,rain_probability_next_1h_pct,rain_next_3h_mm,rain_probability_next_3h_pct,rain_next_6h_mm,rain_probability_next_6h_pct,forecast_data_available
+Andheri,2026-10-16 14:00:00,0.0,0.0,0.0,0.0,39,2026-10-16 15:15:00,13.507108350000001,0.0,AVAILABLE,88.50710835,FRESH,0.0,0,0.0,0,0.0,0,True
+Bandra,2026-10-16 14:00:00,0.0,0.0,0.0,0.0,39,2026-10-16 15:15:00,13.507108350000001,0.0,AVAILABLE,88.50710835,FRESH,0.0,0,0.0,0,0.0,0,True
+Chembur,2026-10-16 14:00:00,0.0,0.0,0.0,0.0,39,2026-10-16 15:15:00,13.507108350000001,0.0,AVAILABLE,88.50710835,FRESH,0.0,0,0.0,0,0.0,0,True
+Colaba,2026-10-16 14:00:00,0.0,0.0,0.0,0.0,39,2026-10-16 15:15:00,13.507108350000001,0.0,AVAILABLE,88.50710835,FRESH,0.0,0,0.0,0,0.0,0,True
+Dadar,2026-10-16 14:00:00,0.0,0.0,0.0,0.0,39,2026-10-16 15:15:00,13.507108350000001,0.0,AVAILABLE,88.50710835,FRESH,0.0,0,0.0,0,0.0,0,True
+Kurla,2026-10-16 14:00:00,0.0,0.0,0.0,0.0,39,2026-10-16 15:15:00,13.507108350000001,0.0,AVAILABLE,88.50710835,FRESH,0.0,0,0.0,0,0.0,0,True
+Powai,2026-10-16 14:00:00,0.0,0.0,0.0,0.0,39,2026-10-16 15:15:00,13.507108350000001,0.0,AVAILABLE,88.50710835,FRESH,0.0,0,0.0,0,0.0,0,True
+Sion,2026-10-16 14:00:00,0.0,0.0,0.0,0.0,39,2026-10-16 15:15:00,13.507108350000001,0.0,AVAILABLE,88.50710835,FRESH,0.0,0,0.0,0,0.0,0,True

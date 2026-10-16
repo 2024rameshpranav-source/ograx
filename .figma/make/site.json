@@ -1,0 +1,10 @@
+{
+  "description": "This advanced AI-powered platform predicts waterlogging risks, visualizes data on interactive maps, and facilitates citizen reporting for timely responses.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

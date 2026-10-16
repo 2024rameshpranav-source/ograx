@@ -1,0 +1,9 @@
+location_name,reported_evidence,match_status,source,source_date,risk_label_usable
+Andheri,Andheri East appears in reported waterlogging-prone areas,NEARBY_AREA_ONLY,"Mid-day, BMC Flood Preparedness Guidelines 2026 coverage",2026-08-05,False
+Bandra,Bandra appears among recurring waterlogging areas,LOCALITY_REPORTED,"Mid-day, BMC Flood Preparedness Guidelines 2026 coverage",2026-07-27,False
+Chembur,No exact match established from sources reviewed,UNVERIFIED,,,False
+Colaba,No exact match established from sources reviewed,UNVERIFIED,,,False
+Dadar,Dadar appears in a historical heavy-rainfall cluster analysis,RAINFALL_CONTEXT_ONLY,Mumbai Climate Action Plan,2022,False
+Kurla,Recurring waterlogging reported in Kurla,LOCALITY_REPORTED,"Mid-day, BMC Flood Preparedness Guidelines 2026 coverage",2026-07-27,False
+Powai,Recurring waterlogging reported in the Mithi catchment,LOCALITY_REPORTED,"Mid-day, BMC Flood Preparedness Guidelines 2026 coverage",2026-07-27,False
+Sion,No exact match established from sources reviewed,UNVERIFIED,,,False

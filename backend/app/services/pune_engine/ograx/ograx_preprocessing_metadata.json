@@ -1,0 +1,201 @@
+{
+  "created_utc": "2026-10-16T09:01:15.198799+00:00",
+  "purpose": "Ograx 60-minute flood classifier prototype trained on SIMULATED PRAVAHA scenarios; not validated on real-world observations.",
+  "dataset": {
+    "path": "/content/SIH_2026/datasets/dataset_to_train_model/pune_flood_ml_dataset.csv",
+    "sha256": "8af38433ef2e5d777fdddae6980bc8b7270f68fe03701f3ec92c8bbac28aa068",
+    "rows": 226800,
+    "columns": 36
+  },
+  "label": {
+    "column": "flood_probability_60m",
+    "note": "Original dataset label used exactly as stored; not re-thresholded.",
+    "positive_rate_overall": 0.05485008818342152
+  },
+  "features": [
+    "rain_15m",
+    "rain_30m",
+    "rain_60m",
+    "rain_120m",
+    "rain_intensity",
+    "elevation_m",
+    "invert_elevation_m",
+    "pipe_diameter_mm"
+  ],
+  "rain_features": [
+    "rain_15m",
+    "rain_30m",
+    "rain_60m",
+    "rain_120m",
+    "rain_intensity"
+  ],
+  "static_features": [
+    "elevation_m",
+    "invert_elevation_m",
+    "pipe_diameter_mm"
+  ],
+  "explicitly_excluded_predictors": [
+    "current_depth_m",
+    "node_depth_m",
+    "surcharge_flag",
+    "inflow_cms",
+    "ponded_volume_m3"
+  ],
+  "excluded_id_and_time_columns": [
+    "simulation_id",
+    "node_id",
+    "timestamp"
+  ],
+  "preprocessing": {
+    "imputer": "SimpleImputer(strategy='median') inside the saved pipeline",
+    "imputer_medians": {
+      "rain_15m": 0.0,
+      "rain_30m": 4.29522,
+      "rain_60m": 15.3624,
+      "rain_120m": 45.96192,
+      "rain_intensity": 0.0,
+      "elevation_m": 546.325,
+      "invert_elevation_m": 544.525,
+      "pipe_diameter_mm": 300.0
+    },
+    "scaling": "none for tree models",
+    "input_order": [
+      "rain_15m",
+      "rain_30m",
+      "rain_60m",
+      "rain_120m",
+      "rain_intensity",
+      "elevation_m",
+      "invert_elevation_m",
+      "pipe_diameter_mm"
+    ]
+  },
+  "model": {
+    "name": "xgb_d5_lr05",
+    "family": "xgb",
+    "params": {
+      "n_estimators": 300,
+      "max_depth": 5,
+      "learning_rate": 0.05,
+      "min_child_weight": 10
+    },
+    "selection": "highest mean grouped-CV PR-AUC on training storms"
+  },
+  "decision_threshold": {
+    "value": 0.818358302116394,
+    "how": "maximizes F1 on out-of-fold predictions of training storms; class weighting means probabilities are NOT calibrated"
+  },
+  "split": {
+    "method": "StratifiedGroupKFold by storm id; whole storms held out",
+    "group_column": "simulation_id",
+    "train_storms": [
+      "S01_MOD_30M",
+      "S04_MOD_180M",
+      "S05_HVY_30M",
+      "S06_HVY_60M",
+      "S07_HVY_120M",
+      "S08_HVY_180M",
+      "S09_EXT_30M",
+      "S10_EXT_60M",
+      "S11_EXT_120M",
+      "S13_MOD_60M_REAR",
+      "S14_HVY_60M_FRONT",
+      "S15_HVY_60M_REAR",
+      "S16_EXT_60M_FRONT",
+      "S19_HVY_60M_BLK70",
+      "S20_HVY_120M_BLK70",
+      "S21_EXT_60M_BLK70",
+      "S22_EXT_120M_BLK70",
+      "S24_HVY_60M_BLK50",
+      "S25_HVY_120M_BLK50",
+      "S26_EXT_60M_BLK50",
+      "S27_EXT_120M_BLK50"
+    ],
+    "test_storms": [
+      "S02_MOD_60M",
+      "S03_MOD_120M",
+      "S12_MOD_60M_FRONT",
+      "S17_EXT_60M_REAR",
+      "S18_MOD_60M_BLK70",
+      "S23_MOD_60M_BLK50",
+      "S28_MOD_120M_BLK50"
+    ],
+    "seed": 42
+  },
+  "test_metrics_held_out_storms": {
+    "threshold": 0.818358302116394,
+    "precision": 0.45580749652938457,
+    "recall": 0.8889891696750902,
+    "f1": 0.6026307739369838,
+    "pr_auc": 0.6835232442261476,
+    "roc_auc": 0.9892364903249471,
+    "tn": 52916,
+    "fp": 1176,
+    "fn": 123,
+    "tp": 985
+  },
+  "baselines_test": {
+    "BASELINE always-positive": {
+      "threshold": 0.5,
+      "precision": 0.02007246376811594,
+      "recall": 1.0,
+      "f1": 0.03935497620231584,
+      "pr_auc": 0.02007246376811594,
+      "roc_auc": 0.5,
+      "tn": 0,
+      "fp": 54092,
+      "fn": 0,
+      "tp": 1108
+    },
+    "BASELINE rain_60m threshold rule": {
+      "threshold": 68.35103,
+      "precision": 0.07590909090909091,
+      "recall": 0.15072202166064982,
+      "f1": 0.10096735187424426,
+      "pr_auc": 0.036825761414221406,
+      "roc_auc": 0.5777606196262498,
+      "tn": 52059,
+      "fp": 2033,
+      "fn": 941,
+      "tp": 167
+    },
+    "BASELINE logistic regression": {
+      "threshold": 0.7440738213135748,
+      "precision": 0.2140210006176652,
+      "recall": 0.6254512635379061,
+      "f1": 0.3189139438564197,
+      "pr_auc": 0.2993870998489546,
+      "roc_auc": 0.9460807146054949,
+      "tn": 51547,
+      "fp": 2545,
+      "fn": 415,
+      "tp": 693
+    }
+  },
+  "unseen_storm_and_node_metrics": {
+    "threshold": 0.818358302116394,
+    "precision": 0.3699421965317919,
+    "recall": 0.7933884297520661,
+    "f1": 0.5045992115637319,
+    "pr_auc": 0.5454458739201666,
+    "roc_auc": 0.9283923867137931,
+    "tn": 10471,
+    "fp": 327,
+    "fn": 50,
+    "tp": 192
+  },
+  "versions": {
+    "python": "3.13.16",
+    "sklearn": "1.6.1",
+    "xgboost": "3.4.1",
+    "pandas": "2.2.3",
+    "numpy": "2.1.3",
+    "joblib": "1.6.0"
+  },
+  "limitations": [
+    "Trained only on simulated scenarios from 28 storms; no real-world validation.",
+    "Live hydraulic state (depth, inflow, surcharge, ponding) was deliberately excluded, so the model cannot see current network conditions.",
+    "Static features may identify nodes; performance on new locations is lower-confidence (see unseen_storm_and_node_metrics).",
+    "Model trained on training storms only, so reported test metrics apply to this exact artifact."
+  ]
+}
