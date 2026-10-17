@@ -111,12 +111,14 @@ class LoadedModel:
                 detail=f"Inference execution failed for {self.city} model: {str(e)}"
             )
 
+SUPPORTED_CITIES = ["Mumbai", "Pune"]
+
 class ModelService:
     _instance = None
 
     def __init__(self):
+        # Pune operates via trained ML model. Mumbai operates via dedicated rule-based warning engine.
         self.models: Dict[str, LoadedModel] = {
-            "Mumbai": LoadedModel("Mumbai", settings.MUMBAI_MODEL_PATH),
             "Pune": LoadedModel("Pune", settings.PUNE_MODEL_PATH),
         }
 
@@ -127,27 +129,43 @@ class ModelService:
         return cls._instance
 
     def initialize_models(self):
-        """Loads all configured models once at application startup."""
+        """Loads all configured machine learning models once at application startup."""
         logger.info("Initializing ML model registry for AquaSignal...")
         for city, model_wrapper in self.models.items():
             model_wrapper.load()
 
     def normalize_city(self, city: str) -> str:
         clean = city.strip().title()
-        if clean not in self.models:
+        if clean not in SUPPORTED_CITIES:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"Unsupported city '{city}'. AquaSignal currently supports: {', '.join(self.models.keys())}"
+                detail=f"Unsupported city '{city}'. AquaSignal currently supports: {', '.join(SUPPORTED_CITIES)}"
             )
         return clean
 
     def get_model(self, city: str) -> LoadedModel:
         normalized = self.normalize_city(city)
+        if normalized not in self.models:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"City '{normalized}' is powered by the rule-based warning engine, not a joblib ML model."
+            )
         return self.models[normalized]
 
     def get_status_summary(self) -> Dict[str, Any]:
         """Provides status breakdown for health check endpoint."""
         summary = {}
+        # Mumbai rule-based screening engine status
+        summary["mumbai"] = {
+            "city": "Mumbai",
+            "loaded": True,
+            "configured_path": "backend/app/services/mumbai_engine",
+            "engine_type": "rule_based_rainfall_warning_engine",
+            "model_type": "rainfall_screening_engine",
+            "validation_status": "NOT_VALIDATED",
+            "status": "ready (rule-based warning engine)",
+        }
+        # Pune machine learning model status
         for city, model_wrapper in self.models.items():
             summary[city.lower()] = {
                 "city": city,

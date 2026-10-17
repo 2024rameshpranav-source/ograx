@@ -65,14 +65,33 @@ class MumbaiWaterloggingService:
             if weather.get("data_freshness_status") != "FRESH_LIVE":
                 data_freshness_overall = "ARCHIVE_SNAPSHOT_OR_FALLBACK"
 
-            # Classify screening status
-            warning_status = classify_warning(
+            # Classify screening status for all 3 standard horizons (1h, 3h, 6h)
+            w1 = classify_warning(
                 data_status=data_status,
-                recent_mm=recent_rain,
-                forecast_mm=forecast_rain,
-                horizon=horizon,
+                recent_mm=weather.get("rain_last_1h_mm"),
+                forecast_mm=weather.get("rain_next_1h_mm"),
+                horizon=1,
                 thresholds=self.thresholds
             )
+            w3 = classify_warning(
+                data_status=data_status,
+                recent_mm=weather.get("rain_last_3h_mm"),
+                forecast_mm=weather.get("rain_next_3h_mm"),
+                horizon=3,
+                thresholds=self.thresholds
+            )
+            w6 = classify_warning(
+                data_status=data_status,
+                recent_mm=weather.get("rain_last_6h_mm"),
+                forecast_mm=weather.get("rain_next_6h_mm"),
+                horizon=6,
+                thresholds=self.thresholds
+            )
+            from app.services.mumbai_engine.screening import overall_status as calc_overall_status
+            loc_overall = calc_overall_status([w1, w3, w6])
+
+            # Active warning status for the requested horizon
+            warning_status = w1 if horizon == 1 else (w3 if horizon == 3 else w6)
             overall_counts[warning_status] = overall_counts.get(warning_status, 0) + 1
 
             # Generate explanation
@@ -92,15 +111,30 @@ class MumbaiWaterloggingService:
                 "longitude": loc["longitude"],
                 "elevation_m": loc["elevation_m"],
                 "warning_status": warning_status,
+                "warning_1h": w1,
+                "warning_3h": w3,
+                "warning_6h": w6,
+                "overall_screening_status": loc_overall,
+                "screening_status": warning_status,
+                "screening_basis": explanation,
                 "recent_rainfall_mm": recent_rain,
                 "forecast_rainfall_mm": forecast_rain,
+                "rain_last_1h_mm": weather.get("rain_last_1h_mm"),
+                "rain_last_3h_mm": weather.get("rain_last_3h_mm"),
+                "rain_last_6h_mm": weather.get("rain_last_6h_mm"),
                 "rain_last_24h_mm": weather.get("rain_last_24h_mm"),
+                "rain_next_1h_mm": weather.get("rain_next_1h_mm"),
+                "rain_next_3h_mm": weather.get("rain_next_3h_mm"),
+                "rain_next_6h_mm": weather.get("rain_next_6h_mm"),
                 "thresholds": self.thresholds[horizon],
+                "all_thresholds": self.thresholds,
                 "explanation": explanation,
                 "data_status": data_status,
                 "data_source": data_source,
                 "observation_time": weather.get("observation_time", generated_time),
                 "waterlogging_probability": None,  # Intentionally null: unvalidated prototype
+                "model_validation_status": "NOT_VALIDATED",
+                "warning_engine_status": "RULE_BASED_PROTOTYPE_NOT_VALIDATED",
                 "hotspot_evidence": loc["hotspot_evidence"],
             })
 

@@ -10,6 +10,29 @@ from app.services.mumbai_engine.service import mumbai_waterlogging_service
 
 router = APIRouter(prefix="/cities", tags=["City Models & Screening"])
 
+@router.get("", response_model=Dict[str, Any])
+def list_supported_cities() -> Dict[str, Any]:
+    """Returns metadata for all supported cities in AquaSignal."""
+    return {
+        "supported_cities": ["Mumbai", "Pune"],
+        "cities": {
+            "mumbai": {
+                "name": "Mumbai",
+                "engine": "rule_based_rainfall_warning_engine",
+                "locations_endpoint": "/api/cities/mumbai/locations",
+                "waterlogging_endpoint": "/api/cities/mumbai/waterlogging",
+                "monitored_corridors_count": 8,
+                "validation_status": "NOT_VALIDATED",
+            },
+            "pune": {
+                "name": "Pune",
+                "engine": "machine_learning_prediction_model",
+                "predictions_endpoint": "/api/predictions",
+                "validation_status": "TRAINED_MODEL",
+            }
+        }
+    }
+
 @router.get("/mumbai/locations", response_model=List[Dict[str, Any]])
 def get_mumbai_locations() -> List[Dict[str, Any]]:
     """

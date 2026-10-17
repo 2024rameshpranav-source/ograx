@@ -16,13 +16,16 @@ import { apiClient } from "./services/api";
 import { reportService, type DemoReport } from "./services/reports";
 import OperationalPictureSection from "./components/OperationalPictureSection";
 import MumbaiScreeningSection from "./components/MumbaiScreeningSection";
+import LiveCameraModal from "./components/LiveCameraModal";
+import IncidentIntelligenceSection from "./components/IncidentIntelligenceSection";
+import RouteAdvisorySection from "./components/RouteAdvisorySection";
 
 
 const navGroups = [
   ["MONITOR", ["Waterlogging Intelligence", "Forecast Explorer", "Geographic Coverage"]],
   ["COMMUNITY", ["Citizen Reports", "Incident Timeline"]],
   ["RESPONSE", ["Response Intelligence", "Route Advisory"]],
-  ["INTELLIGENCE", ["Intelligence Centre", "Model Performance"]],
+  ["INTELLIGENCE", ["Intelligence Centre", "AI Incident Intelligence", "Model Performance"]],
   ["SYSTEM", ["Settings"]],
 ] as const;
 const loadReports=()=>reportService.list();
@@ -31,8 +34,52 @@ const riskClass: Record<string, string> = { Low: "low", Moderate: "moderate", Hi
 
 function Icon({ children }: { children: string }) { return <span className="icon">{children}</span> }
 function Badge({ children, tone = "blue" }: { children: React.ReactNode; tone?: string }) { return <span className={`badge ${tone}`}>{children}</span> }
-function Spark({ values, color = "#dc4d32" }: { values: number[]; color?: string }) {
-  const pts = values.map((v, i) => `${i * 28},${38 - v}`).join(" ");
+function formatRiskCategoryTitle(category: string, probability?: number | null): string {
+  const upper = (category || "").toUpperCase();
+  if (upper.includes("NO_RAINFALL") || upper.includes("NO_SIGNAL")) {
+    return "NO RAINFALL SIGNAL";
+  }
+  if (upper.includes("LOW_RAINFALL")) {
+    return "LOW RAINFALL SIGNAL";
+  }
+  if (upper.includes("RAINFALL_WATCH")) {
+    return "RAINFALL WATCH";
+  }
+  return upper;
+}
+
+function formatRiskBadgeText(category: string): string {
+  const upper = (category || "").toUpperCase();
+  if (upper.includes("NO_RAINFALL") || upper.includes("NO_SIGNAL") || upper.startsWith("NO_")) {
+    return "CLEAR";
+  }
+  if (upper.includes("LOW_RAINFALL")) {
+    return "LOW";
+  }
+  if (upper.includes("WATCH")) {
+    return "WATCH";
+  }
+  if (upper.includes("SEVERE")) {
+    return "SEVERE";
+  }
+  if (upper.includes("HIGH")) {
+    return "HIGH";
+  }
+  if (upper.includes("MODERATE") || upper.includes("MOD")) {
+    return "MOD";
+  }
+  return upper.slice(0, 4);
+}
+
+function formatProbabilityText(probability?: number | null): string {
+  if (probability !== null && probability !== undefined && !isNaN(probability)) {
+    return `${probability}%`;
+  }
+  return "0%";
+}
+
+function Spark({ values, color = "#dc4d32" }: { values: (number | null | undefined)[]; color?: string }) {
+  const pts = values.map((v, i) => `${i * 28},${38 - Math.min(35, (v || 0) * 0.35)}`).join(" ");
   return <svg className="spark" viewBox="0 0 140 42"><polyline points={pts} fill="none" stroke={color} strokeWidth="2.5" /><polyline points={`0,42 ${pts} 140,42`} fill={color} opacity=".08" /></svg>
 }
 
@@ -211,19 +258,51 @@ function LayerControl({ layers, setLayers }: { layers: string[]; setLayers: (v: 
 
 function Sidebar({ page, setPage, area, onArea, user, logout }: { page: string; setPage: (p: string) => void; area: string; onArea: () => void; user:string; logout:()=>void }) {
   const [profileOpen,setProfileOpen]=useState(false);
-  const icons: Record<string,string> = {"Waterlogging Intelligence":"⌂","Forecast Explorer":"↗","Geographic Coverage":"⌖","Citizen Reports":"◉","Incident Timeline":"◷","Response Intelligence":"△","Route Advisory":"⌁","Intelligence Centre":"◎","Model Performance":"▥","Settings":"◇"};
+  const icons: Record<string,string> = {
+    "Waterlogging Intelligence":"⌂",
+    "Forecast Explorer":"↗",
+    "Geographic Coverage":"⌖",
+    "Citizen Reports":"◉",
+    "Incident Timeline":"◷",
+    "Response Intelligence":"△",
+    "Route Advisory":"⌁",
+    "Intelligence Centre":"◎",
+    "AI Incident Intelligence":"📷",
+    "Model Performance":"▥",
+    "Settings":"◇"
+  };
   return <aside className="sidebar">
     <div className="brand"><span className="brandmark">A</span><span>AquaSignal<small>WATER INTELLIGENCE</small></span></div>
-    <nav>{navGroups.map(([group,items])=><div className="nav-group" key={group}><div className="nav-label">{group}</div>{items.map(n=><button className={page===n?"active":""} onClick={()=>setPage(n)} key={n}><Icon>{icons[n]}</Icon><span>{n}</span>{n==="Citizen Reports"&&<b>7</b>}</button>)}</div>)}</nav>
+    <nav>{navGroups.map(([group,items])=><div className="nav-group" key={group}><div className="nav-label">{group}</div>{items.map(n=><button className={page===n?"active":""} onClick={()=>setPage(n)} key={n}><Icon>{icons[n]}</Icon><span>{n}</span>{n==="Citizen Reports"&&<b>7</b>}{n==="AI Incident Intelligence"&&<b style={{ background: "#0ea5e9" }}>AI</b>}</button>)}</div>)}</nav>
     <button className="area-card" onClick={onArea}><div className="pulse" /><div><small>GEOGRAPHIC WORKSPACE</small><strong>{area}</strong><span>Demonstration coverage · Change →</span></div></button>
     <div className="side-profile"><button onClick={()=>setProfileOpen(!profileOpen)}><span className="profile-avatar">{user.slice(0,2).toUpperCase()}</span><span><strong>{user}</strong><small>Demo account · Manage</small></span><i>⌃</i></button>{profileOpen&&<div className="profile-menu"><button onClick={()=>setPage("Settings")}>⚙ Account settings</button><button onClick={logout}>↪ Log Out</button><small>Local demo session</small></div>}</div>
   </aside>
 }
 
-function Header({ horizon, setHorizon, live, setLive, onArea, area, user, logout, settings }: { horizon: number; setHorizon: (n: number) => void; live: boolean; setLive: (v: boolean) => void; onArea: () => void; area: string; user:string; logout:()=>void; settings:()=>void }) {
+function Header({ horizon, setHorizon, live, setLive, onArea, area, user, logout, settings, onOpenLiveCamera }: { horizon: number; setHorizon: (n: number) => void; live: boolean; setLive: (v: boolean) => void; onArea: () => void; area: string; user:string; logout:()=>void; settings:()=>void; onOpenLiveCamera?: () => void }) {
   const [open,setOpen]=useState(false);
   return <header><button className="location" onClick={onArea}><Icon>⌖</Icon><span>{area}<small>Country → Region → City → Monitoring area</small></span><b>⌄</b></button>
     <div className="horizon compact"><span>Forecast</span><select value={horizon} onChange={e => setHorizon(+e.target.value)}>{[1,2,3,4,5,6].map(x => <option key={x} value={x}>+{x} hours</option>)}</select></div>
+    <button
+      className="env"
+      style={{
+        background: "linear-gradient(135deg, #0284c7 0%, #0369a1 100%)",
+        color: "#ffffff",
+        fontWeight: 700,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "6px",
+        cursor: "pointer",
+        padding: "6px 12px",
+        borderRadius: "6px",
+        border: "1px solid #38bdf8",
+      }}
+      onClick={onOpenLiveCamera}
+      title="Capture live camera photo and run Hugging Face flood verification"
+    >
+      <span>📸</span>
+      <span>Live Camera Flood AI</span>
+    </button>
     <button className={`env ${live ? "live" : ""}`} onClick={() => setLive(!live)}><i />{live ? "DATA UNAVAILABLE" : "DEMO MODE"}</button>
     <div className="fresh"><i /> Data fresh <small>Updated 2m ago</small></div>
     <button className="round" onClick={()=>alert("3 demonstration notifications: one escalation, two report updates.")}>◔<em>3</em></button><button className="avatar" onClick={()=>setOpen(!open)}>{user.slice(0,2).toUpperCase()}</button>{open&&<div className="header-profile"><strong>{user}</strong><small>Local demo account</small><button onClick={settings}>Account settings</button><button onClick={logout}>Log Out</button></div>}
@@ -281,16 +360,16 @@ function DetailPanel({
       <div className="prob">
         <div>
           <span>Event probability</span>
-          <strong>{prob}%</strong>
+          <strong>{prob !== null && prob !== undefined ? `${prob}%` : "0% (Clear)"}</strong>
           <small>
             Category:{" "}
-            <b className={cat === "SEVERE" ? "severe" : cat === "HIGH" ? "high" : "orange"}>
-              {cat}
+            <b className={cat.includes("SEVERE") ? "severe" : cat.includes("HIGH") || cat.includes("WATCH") ? "high" : "blue"}>
+              {formatRiskCategoryTitle(prediction.category, prob)}
             </b>
           </small>
         </div>
         <div className="gauge">
-          <i style={{ width: `${prob}%` }} />
+          <i style={{ width: `${prob ?? 0}%` }} />
         </div>
       </div>
 
@@ -404,10 +483,10 @@ function DetailPanel({
   );
 }
 
-function Dashboard({ horizon, setHorizon, go, area }: { horizon: number; setHorizon: (n: number) => void; go: (p:string)=>void; area: string }) {
+function Dashboard({ horizon, setHorizon, go, area, onOpenLiveCamera }: { horizon: number; setHorizon: (n: number) => void; go: (p:string)=>void; area: string; onOpenLiveCamera?: () => void }) {
   const [detail, setDetail] = useState(true);
   const [layers, setLayers] = useState(["Predicted risk","Citizen reports"]);
-  const [mumbaiMode, setMumbaiMode] = useState<"screening" | "map">("map");
+  const [mumbaiMode, setMumbaiMode] = useState<"screening" | "map">("screening");
 
   const segments = useMemo(() => getSegmentsForArea(area), [area]);
   const [selectedSegment, setSelectedSegment] = useState<RoadSegment>(segments[0]);
@@ -511,16 +590,17 @@ function Dashboard({ horizon, setHorizon, go, area }: { horizon: number; setHori
   }, [area, selectedSegment, horizon]);
 
   const pune = area.startsWith("Pune");
+  const currentRain = pune ? 10.0 : (predictionData?.rainfallForecastMm ?? 0.0);
   const kpiData = pune
     ? [
-        ["High-risk locations", `${segments.filter(s => calculateSegmentPrediction(s, horizon).probability >= 60).length}`, "Pune demo dataset", "high"],
-        ["Severe-risk locations", `${segments.filter(s => calculateSegmentPrediction(s, horizon).probability >= 80).length}`, "Review after +4h", "severe"],
+        ["High-risk locations", `${segments.filter(s => calculateSegmentPrediction(s, horizon, 10.0).probability >= 60).length}`, "Pune demo dataset", "high"],
+        ["Severe-risk locations", `${segments.filter(s => calculateSegmentPrediction(s, horizon, 10.0).probability >= 80).length}`, "Review after +4h", "severe"],
         ["Pending reports", "4", "1 possible duplicate", "moderate"],
         ["Last successful update", "14:28", "6 minutes ago", "blue"],
       ]
     : [
-        ["High-risk locations", `${segments.filter(s => calculateSegmentPrediction(s, horizon).probability >= 60).length}`, "Mumbai dataset", "high"],
-        ["Severe-risk locations", `${segments.filter(s => calculateSegmentPrediction(s, horizon).probability >= 80).length}`, "Immediate review", "severe"],
+        ["High-risk locations", `${segments.filter(s => calculateSegmentPrediction(s, horizon, currentRain).probability >= 60).length}`, "Mumbai dataset", "high"],
+        ["Severe-risk locations", `${segments.filter(s => calculateSegmentPrediction(s, horizon, currentRain).probability >= 80).length}`, "Immediate review", "severe"],
         ["Pending reports", "7", "2 possible duplicates", "moderate"],
         ["Last successful update", "14:32", "2 minutes ago", "blue"],
       ];
@@ -565,6 +645,14 @@ function Dashboard({ horizon, setHorizon, go, area }: { horizon: number; setHori
             💧 Open 8-Corridor Screening Engine
           </button>
         )}
+        <button
+          className="outline"
+          onClick={() => onOpenLiveCamera?.()}
+          style={{ background: "#f0fdf4", borderColor: "#16a34a", color: "#15803d", fontWeight: 700 }}
+          title="Capture photo or upload field evidence to verify with Hugging Face AI"
+        >
+          📸 Live Camera AI Report
+        </button>
         <button className="outline">↗ Export situation brief</button>
       </div>
 
@@ -572,22 +660,29 @@ function Dashboard({ horizon, setHorizon, go, area }: { horizon: number; setHori
         <div className="risk-overview">
           <div>
             <span>AREA RISK OVERVIEW</span>
-            <strong className={predictionData.category.toUpperCase() === "SEVERE" ? "severe" : predictionData.category.toUpperCase() === "HIGH" ? "orange" : "blue"}>
-              {predictionData.category.toUpperCase()} ({predictionData.probability}%)
+            <strong className={
+              predictionData.category.toUpperCase().includes("SEVERE") ? "severe" :
+              predictionData.category.toUpperCase().includes("HIGH") || predictionData.category.toUpperCase().includes("WATCH") ? "orange" : "blue"
+            }>
+              {formatRiskCategoryTitle(predictionData.category, predictionData.probability)} ({
+                predictionData.probability !== null && predictionData.probability !== undefined
+                  ? `${predictionData.probability}%`
+                  : "0mm Rain"
+              })
             </strong>
             <small>{selectedSegment.name} · +{horizon}h · updated {pune ? "6" : "2"}m ago</small>
           </div>
           <div className="composition-bar" title="Monitored location composition">
-            <i className="low" style={{ width: `${pune ? 42 : 34}%` }} />
-            <i className="moderate" style={{ width: `${pune ? 31 : 29}%` }} />
-            <i className="high" style={{ width: `${pune ? 21 : 27}%` }} />
-            <i className="severe" style={{ width: `${pune ? 6 : 10}%` }} />
+            <i className="low" style={{ width: `${pune ? 42 : currentRain > 15 ? 34 : 85}%` }} />
+            <i className="moderate" style={{ width: `${pune ? 31 : currentRain > 15 ? 29 : 15}%` }} />
+            <i className="high" style={{ width: `${pune ? 21 : currentRain > 15 ? 27 : 0}%` }} />
+            <i className="severe" style={{ width: `${pune ? 6 : currentRain > 15 ? 10 : 0}%` }} />
           </div>
           <div className="composition-legend">
-            <span>Low {pune ? "42" : "34"}%</span>
-            <span>Moderate {pune ? "31" : "29"}%</span>
-            <span>High {pune ? "21" : "27"}%</span>
-            <span>Severe {pune ? "6" : "10"}%</span>
+            <span>Low {pune ? "42" : currentRain > 15 ? "34" : "85"}%</span>
+            <span>Moderate {pune ? "31" : currentRain > 15 ? "29" : "15"}%</span>
+            <span>High {pune ? "21" : currentRain > 15 ? "27" : "0"}%</span>
+            <span>Severe {pune ? "6" : currentRain > 15 ? "10" : "0"}%</span>
           </div>
         </div>
 
@@ -596,7 +691,12 @@ function Dashboard({ horizon, setHorizon, go, area }: { horizon: number; setHori
             Corridors requiring attention <button onClick={() => go("Response Intelligence")}>View queue →</button>
           </div>
           {segments.slice(0, 2).map((s, i) => {
-            const sPred = calculateSegmentPrediction(s, horizon);
+            const sPred = calculateSegmentPrediction(s, horizon, currentRain);
+            const isSevere = sPred.category === "Severe" || sPred.probability >= 80;
+            const isHigh = sPred.category === "High" || sPred.probability >= 60;
+            const isMod = sPred.category === "Moderate" || sPred.probability >= 35;
+            const badgeClass = isSevere ? "severe" : isHigh ? "orange" : isMod ? "blue" : "moderate";
+
             return (
               <button
                 onClick={() => {
@@ -608,7 +708,12 @@ function Dashboard({ horizon, setHorizon, go, area }: { horizon: number; setHori
                 <b>{i + 1}</b>
                 <span>
                   <strong>{s.name}</strong>
-                  <small>{sPred.category.toUpperCase()} ({sPred.probability}%) · {s.grid}</small>
+                  <small>
+                    <b className={badgeClass} style={{ marginRight: "4px" }}>
+                      {formatRiskBadgeText(sPred.category)}
+                    </b>
+                    ({formatProbabilityText(sPred.probability)}) · {s.grid}
+                  </small>
                 </span>
                 <i>View on map</i>
               </button>
@@ -626,9 +731,22 @@ function Dashboard({ horizon, setHorizon, go, area }: { horizon: number; setHori
 
         <div className="forecast-change">
           <span>FORECAST CHANGE</span>
-          <strong>↗ +{predictionData.timeline[5].probability - predictionData.timeline[0].probability}%</strong>
-          <small>Probability change from +1h to +6h</small>
-          <Spark values={predictionData.timeline.map(t => t.probability)} color="#e75b45" />
+          <strong>
+            {(() => {
+              const p6 = predictionData.timeline[5]?.probability;
+              const p1 = predictionData.timeline[0]?.probability;
+              if (p6 !== null && p6 !== undefined && p1 !== null && p1 !== undefined) {
+                const diff = p6 - p1;
+                return diff >= 0 ? `↗ +${diff}%` : `↘ ${diff}%`;
+              }
+              const r6 = predictionData.timeline[5]?.rainfallMm ?? 0;
+              const r1 = predictionData.timeline[0]?.rainfallMm ?? 0;
+              const rDiff = Math.round((r6 - r1) * 10) / 10;
+              return rDiff > 0 ? `↗ +${rDiff}mm` : `→ 0mm`;
+            })()}
+          </strong>
+          <small>Change from +1h to +6h</small>
+          <Spark values={predictionData.timeline.map(t => t.probability ?? t.rainfallMm ?? 0)} color="#e75b45" />
         </div>
       </section>
 
@@ -641,22 +759,29 @@ function Dashboard({ horizon, setHorizon, go, area }: { horizon: number; setHori
           <Badge tone="blue">PHYSICAL HEURISTIC</Badge>
         </div>
         <div className="timeline-items">
-          {predictionData.timeline.map((x, i) => (
-            <button
-              className={horizon === i + 1 ? "active" : ""}
-              onClick={() => setHorizon(i + 1)}
-              key={i}
-            >
-              <small>+{i + 1} HOUR</small>
-              <strong className={x.probability >= 80 ? "severe" : x.probability >= 60 ? "high" : x.probability >= 35 ? "orange" : "moderate"}>
-                {x.category.toUpperCase().slice(0, 3)}
-              </strong>
-              <span>
-                {x.probability}% <em>+{x.rainfallMm}mm</em>
-              </span>
-              <i>uncertainty {x.uncertainty}</i>
-            </button>
-          ))}
+          {predictionData.timeline.map((x, i) => {
+            const isSevere = x.category.toUpperCase().includes("SEVERE") || (x.probability !== null && x.probability !== undefined && x.probability >= 80);
+            const isHigh = x.category.toUpperCase().includes("HIGH") || x.category.toUpperCase().includes("WATCH") || (x.probability !== null && x.probability !== undefined && x.probability >= 60);
+            const isMod = x.category.toUpperCase().includes("MOD") || (x.probability !== null && x.probability !== undefined && x.probability >= 35);
+            const toneClass = isSevere ? "severe" : isHigh ? "high" : isMod ? "orange" : "moderate";
+
+            return (
+              <button
+                className={horizon === i + 1 ? "active" : ""}
+                onClick={() => setHorizon(i + 1)}
+                key={i}
+              >
+                <small>+{i + 1} HOUR</small>
+                <strong className={toneClass}>
+                  {formatRiskBadgeText(x.category)}
+                </strong>
+                <span>
+                  {formatProbabilityText(x.probability)} <em>+{x.rainfallMm}mm</em>
+                </span>
+                <i>uncertainty {x.uncertainty}</i>
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -1543,7 +1668,7 @@ function AreaModal({ close, area, select, preferredCity }: { close: () => void; 
 
 export default function App() {
   const initialAuth=!!authService.getSession();
-  const [view,setView]=useState<"landing"|"signin"|"signup"|"app">(()=>location.pathname.startsWith("/app")?(initialAuth?"app":"signin"):location.pathname==="/signup"?(initialAuth?"app":"signup"):location.pathname==="/signin"?(initialAuth?"app":"signin"):"landing"),[authenticated,setAuthenticated]=useState(initialAuth),[page,setPage]=useState("Waterlogging Intelligence"),[horizon,setHorizon]=useState(3),[live,setLive]=useState(false),[areaOpen,setAreaOpen]=useState(false),[area,setArea]=useState(()=>localStorage.getItem("aquasignal-area")||"Mumbai · Mithi River Demonstration Area"),[preferredCity,setPreferredCity]=useState<"Mumbai"|"Pune"|undefined>();
+  const [view,setView]=useState<"landing"|"signin"|"signup"|"app">(()=>location.pathname.startsWith("/app")?(initialAuth?"app":"signin"):location.pathname==="/signup"?(initialAuth?"app":"signup"):location.pathname==="/signin"?(initialAuth?"app":"signin"):"landing"),[authenticated,setAuthenticated]=useState(initialAuth),[page,setPage]=useState("Waterlogging Intelligence"),[horizon,setHorizon]=useState(3),[live,setLive]=useState(false),[areaOpen,setAreaOpen]=useState(false),[liveCameraOpen,setLiveCameraOpen]=useState(false),[area,setArea]=useState(()=>localStorage.getItem("aquasignal-area")||"Mumbai · Mithi River Demonstration Area"),[preferredCity,setPreferredCity]=useState<"Mumbai"|"Pune"|undefined>();
   const authData=authService.getSession();const user=authData?.name||authData?.email?.split("@")[0]||"Demo User";
   useEffect(()=>{const pop=()=>{const p=location.pathname;if(p==="/signup"&&!authenticated)setView("signup");else if(p==="/signin"&&!authenticated)setView("signin");else if(p.startsWith("/app")&&authenticated)setView("app");else setView("landing")};addEventListener("popstate",pop);return()=>removeEventListener("popstate",pop)},[authenticated]);
   const route=(next:"landing"|"signin"|"signup"|"app")=>{const path=next==="landing"?"/":next==="signin"?"/signin":next==="signup"?"/signup":"/app";history.pushState({},"",path);setView(next)};
@@ -1555,5 +1680,43 @@ export default function App() {
   if(view==="signup") return <SignUp back={()=>route("landing")} signin={()=>route("signin")} success={()=>authenticatedSuccess()}/>;
   if(!authenticated){route("signin");return null}
   const navigate=(p:string)=>{setPage(p);if(p==="Geographic Coverage")setAreaOpen(true)};
-  return <div className="app"><Sidebar page={page} setPage={navigate} area={area} onArea={()=>setAreaOpen(true)} user={user} logout={logout}/><div className="shell"><Header horizon={horizon} setHorizon={setHorizon} live={live} setLive={setLive} onArea={()=>setAreaOpen(true)} area={area} user={user} logout={logout} settings={()=>setPage("Settings")}/>{page==="Waterlogging Intelligence"?<Dashboard horizon={horizon} setHorizon={setHorizon} go={navigate} area={area}/>:page==="Forecast Explorer"?<Forecasts area={area} horizon={horizon} setHorizon={setHorizon}/>:page==="Citizen Reports"?<Reports area={area} goMap={()=>setPage("Waterlogging Intelligence")}/>:page==="Response Intelligence"?<ResponseIntelligence area={area} horizon={horizon} setHorizon={setHorizon} viewMap={()=>setPage("Waterlogging Intelligence")}/>:page==="Intelligence Centre"?<IntelligenceCentre area={area} horizon={horizon} setHorizon={setHorizon}/>:<Generic page={page}/>}</div>{areaOpen&&<AreaModal area={area} preferredCity={preferredCity} close={()=>{setAreaOpen(false);if(page==="Geographic Coverage")setPage("Waterlogging Intelligence")}} select={x=>{setArea(x);localStorage.setItem("aquasignal-area",x);setPreferredCity(undefined);setAreaOpen(false);setPage("Waterlogging Intelligence")}}/>}</div>
+  return (
+    <div className="app">
+      <Sidebar page={page} setPage={navigate} area={area} onArea={()=>setAreaOpen(true)} user={user} logout={logout}/>
+      <div className="shell">
+        <Header horizon={horizon} setHorizon={setHorizon} live={live} setLive={setLive} onArea={()=>setAreaOpen(true)} area={area} user={user} logout={logout} settings={()=>setPage("Settings")} onOpenLiveCamera={()=>setLiveCameraOpen(true)}/>
+        {page==="Waterlogging Intelligence" ? (
+          <Dashboard horizon={horizon} setHorizon={setHorizon} go={navigate} area={area} onOpenLiveCamera={()=>setLiveCameraOpen(true)}/>
+        ) : page==="Forecast Explorer" ? (
+          <Forecasts area={area} horizon={horizon} setHorizon={setHorizon}/>
+        ) : page==="Citizen Reports" ? (
+          <Reports area={area} goMap={()=>setPage("Waterlogging Intelligence")}/>
+        ) : page==="AI Incident Intelligence" ? (
+          <IncidentIntelligenceSection currentCity={cityForArea(area)} onOpenLiveCamera={()=>setLiveCameraOpen(true)}/>
+        ) : page==="Response Intelligence" ? (
+          <ResponseIntelligence area={area} horizon={horizon} setHorizon={setHorizon} viewMap={()=>setPage("Waterlogging Intelligence")}/>
+        ) : page==="Route Advisory" ? (
+          <RouteAdvisorySection currentCity={cityForArea(area)} onOpenLiveCamera={()=>setLiveCameraOpen(true)}/>
+        ) : page==="Intelligence Centre" ? (
+          <IntelligenceCentre area={area} horizon={horizon} setHorizon={setHorizon}/>
+        ) : (
+          <Generic page={page}/>
+        )}
+      </div>
+      {areaOpen && (
+        <AreaModal area={area} preferredCity={preferredCity} close={()=>{setAreaOpen(false);if(page==="Geographic Coverage")setPage("Waterlogging Intelligence")}} select={x=>{setArea(x);localStorage.setItem("aquasignal-area",x);setPreferredCity(undefined);setAreaOpen(false);setPage("Waterlogging Intelligence")}}/>
+      )}
+      {liveCameraOpen && (
+        <LiveCameraModal
+          isOpen={true}
+          currentCity={cityForArea(area)}
+          onClose={()=>setLiveCameraOpen(false)}
+          onIncidentCreated={(incident)=>{
+            console.log("New incident submitted:", incident);
+            setPage("AI Incident Intelligence");
+          }}
+        />
+      )}
+    </div>
+  );
 }

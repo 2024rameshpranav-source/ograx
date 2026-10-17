@@ -20,9 +20,6 @@ from app.schemas.prediction import (
 from app.db.models import PredictionDB
 from app.services.model_service import model_service
 from app.services.prediction_service import prediction_service
-from app.services.mumbai_engine.screening import (
-    compute_location_heuristic_risk,
-)
 from app.services.mumbai_engine.service import mumbai_waterlogging_service
 from app.services.pune_engine.service import pune_prediction_service
 from app.utils.logging_config import logger
@@ -108,7 +105,7 @@ class CityPredictionRouter:
 
     @staticmethod
     def get_mumbai_locations() -> List[Dict[str, Any]]:
-        """Delegates strictly to Mumbai engine."""
+        """Delegates strictly to Mumbai warning engine."""
         return mumbai_waterlogging_service.get_supported_locations()
 
     @staticmethod
@@ -121,22 +118,18 @@ class CityPredictionRouter:
         """
         Routes prediction request based on target city.
         Pune routes strictly to its independent ML service.
-        Mumbai routes to trained ML model if loaded, or to heuristic screening engine.
+        Mumbai routes exclusively to the final rule-based warning engine.
         """
         city = CityPredictionRouter.normalize_city(req.city)
 
         if city == "Pune":
             return pune_prediction_service.predict(req, db)
 
-        # Mumbai
-        mumbai_model = model_service.get_model("Mumbai")
-        if mumbai_model.is_loaded:
-            return prediction_service.run_prediction(req, db)
-
-        # Mumbai location-specific screening and heuristic prediction
-        horizon = req.forecast_horizon_hours if req.forecast_horizon_hours in [1, 2, 3, 4, 5, 6] else 3
-        screen_h = 1 if horizon <= 1 else (3 if horizon <= 3 else 6)
-        screening = mumbai_waterlogging_service.get_screening_results(horizon=screen_h)
+        # Mumbai: strictly evaluate via final Mumbai warning engine
+        horizon = req.forecast_horizon_hours if req.forecast_horizon_hours in [1, 3, 6] else (
+            1 if req.forecast_horizon_hours <= 1 else (3 if req.forecast_horizon_hours <= 4 else 6)
+        )
+        screening = mumbai_waterlogging_service.get_screening_results(horizon=horizon)
 
         # Match location specifically
         loc_match = CityPredictionRouter.match_mumbai_location(
@@ -147,42 +140,7 @@ class CityPredictionRouter:
             longitude=req.longitude,
         )
 
-        elevation_m = (
-            req.features.elevation_m
-            if req.features.elevation_m is not None
-            else loc_match["elevation_m"]
-        )
-        rainfall_mm = (
-            req.features.rainfall_mm
-            if req.features.rainfall_mm is not None
-            else (loc_match["forecast_rainfall_mm"] or 0.0)
-        )
-        drainage_ratio = (
-            req.features.drainage_capacity_ratio
-            if req.features.drainage_capacity_ratio is not None
-            else (0.40 if elevation_m <= 10.0 else 0.60)
-        )
-        hist_count = (
-            req.features.historical_incident_count
-            if req.features.historical_incident_count is not None
-            else (8 if "dadar" in loc_match["location_name"].lower() else (9 if "kurla" in loc_match["location_name"].lower() else 3))
-        )
-
-        # Compute location-specific risk score and factor breakdown
-        risk_prob, risk_cat, factors = compute_location_heuristic_risk(
-            elevation_m=elevation_m,
-            rainfall_mm=rainfall_mm,
-            drainage_capacity_ratio=drainage_ratio,
-            historical_incident_count=hist_count,
-            horizon_hours=horizon,
-        )
-
-        logger.info(
-            f"[AquaSignal:PredictionRouter] Location: {loc_match['location_name']} "
-            f"(id: {req.location_id or loc_match['location_id']}), +{horizon}h, Elev: {elevation_m}m, "
-            f"Rain: {rainfall_mm}mm -> Prob: {risk_prob}%, Cat: {risk_cat}"
-        )
-
+        warning_status = loc_match["warning_status"]
         timestamp = screening["generated_at"]
 
         # Persist prediction record in DB for audit trail
@@ -192,9 +150,9 @@ class CityPredictionRouter:
                 location_id=req.location_id or loc_match["location_id"],
                 location_name=req.location_name or loc_match["location_name"],
                 forecast_horizon_hours=horizon,
-                risk_score=risk_prob,
-                risk_category=risk_cat,
-                model_version="heuristic_demonstration_v1.2",
+                risk_score=0.0,
+                risk_category=warning_status,
+                model_version="mumbai_warning_engine_v1.0",
                 features_snapshot=req.features.model_dump_json(),
                 created_at=timestamp,
             )
@@ -205,34 +163,47 @@ class CityPredictionRouter:
             db.rollback()
             logger.error(f"Failed to persist Mumbai screening audit record: {e}")
 
+        logger.info(
+            f"[AquaSignal:MumbaiWarningEngine] Location: {loc_match['location_name']}, +{horizon}h -> Status: {warning_status}"
+        )
+
         return PredictionResponse(
             city="Mumbai",
             location_id=req.location_id or loc_match["location_id"],
             location_name=req.location_name or loc_match["location_name"],
             forecast_horizon_hours=horizon,
-            risk_probability=risk_prob,
-            risk_category=risk_cat,
-            model_id="mumbai_heuristic_screening_v1.2",
+            risk_probability=None,  # Rule: never invent or calculate a probability
+            risk_category=warning_status,
+            model_id="mumbai_rainfall_warning_engine_v1.0",
             prediction_timestamp=timestamp,
             input_freshness=screening["data_freshness"],
-            uncertainty_range=f"±{8 + horizon * 2}%",
+            uncertainty_range="UNVALIDATED_PROTOTYPE",
             is_demonstration_fallback=False,
             details={
-                "is_heuristic_demonstration": True,
-                "model_type": "Physical Heuristic (Elevation + Drainage + Live Rain)",
-                "disclaimer": (
-                    "Heuristic demonstration early-warning output based on local terrain elevation, "
-                    "drainage capacity, and weather. Not a certified operational flood model."
-                ),
-                "warning_status": loc_match["warning_status"],
-                "elevation_m": elevation_m,
-                "drainage_capacity_ratio": drainage_ratio,
-                "recent_rainfall_mm": loc_match["recent_rainfall_mm"],
-                "forecast_rainfall_mm": loc_match["forecast_rainfall_mm"],
-                "explanation": loc_match["explanation"],
-                "factors": factors,
-                "hotspot_evidence": loc_match["hotspot_evidence"],
+                "is_rule_based_warning_engine": True,
+                "model_type": "Rule-Based Rainfall Threshold Screening Engine",
                 "validation_status": "NOT_VALIDATED",
+                "disclaimer": (
+                    "Experimental rule-based rainfall screening output. "
+                    "This is NOT a trained machine-learning model and does NOT provide a validated waterlogging probability."
+                ),
+                "warning_status": warning_status,
+                "warning_1h": loc_match.get("warning_1h"),
+                "warning_3h": loc_match.get("warning_3h"),
+                "warning_6h": loc_match.get("warning_6h"),
+                "overall_screening_status": loc_match.get("overall_screening_status"),
+                "rain_last_1h_mm": loc_match.get("rain_last_1h_mm"),
+                "rain_last_3h_mm": loc_match.get("rain_last_3h_mm"),
+                "rain_last_6h_mm": loc_match.get("rain_last_6h_mm"),
+                "rain_last_24h_mm": loc_match.get("rain_last_24h_mm"),
+                "rain_next_1h_mm": loc_match.get("rain_next_1h_mm"),
+                "rain_next_3h_mm": loc_match.get("rain_next_3h_mm"),
+                "rain_next_6h_mm": loc_match.get("rain_next_6h_mm"),
+                "recent_rainfall_mm": loc_match.get("recent_rainfall_mm"),
+                "forecast_rainfall_mm": loc_match.get("forecast_rainfall_mm"),
+                "elevation_m": loc_match.get("elevation_m"),
+                "explanation": loc_match.get("explanation"),
+                "hotspot_evidence": loc_match.get("hotspot_evidence"),
             }
         )
 
@@ -242,12 +213,7 @@ class CityPredictionRouter:
         if clean_city == "Pune":
             return pune_prediction_service.get_latest(db)
 
-        # For Mumbai, check if there is an existing stored prediction in DB
-        latest = prediction_service.get_latest_prediction("Mumbai", db)
-        if latest:
-            return latest
-
-        # Otherwise generate a live snapshot from screening engine
+        # Mumbai: generate live snapshot from the warning engine
         screening = mumbai_waterlogging_service.get_screening_results(horizon=3)
         first_loc = screening["locations"][0]
         return PredictionResponse(
@@ -255,11 +221,11 @@ class CityPredictionRouter:
             location_id=first_loc["location_id"],
             location_name=first_loc["location_name"],
             forecast_horizon_hours=3,
-            risk_probability=0.0,
-            risk_category=first_loc["warning_status"].replace("_", " ").title(),
-            model_id="mumbai_rule_based_screening_v1.0",
+            risk_probability=None,
+            risk_category=first_loc["warning_status"],
+            model_id="mumbai_rainfall_warning_engine_v1.0",
             prediction_timestamp=screening["generated_at"],
-            input_freshness="live_screening",
+            input_freshness=screening["data_freshness"],
             uncertainty_range="UNVALIDATED_PROTOTYPE",
             is_demonstration_fallback=False,
             details={"screening_snapshot": screening}
@@ -279,12 +245,7 @@ class CityPredictionRouter:
         if clean_city == "Pune":
             return pune_prediction_service.get_forecast_timeline(location_name, base_rainfall_mm, db)
 
-        # Mumbai
-        mumbai_model = model_service.get_model("Mumbai")
-        if mumbai_model.is_loaded:
-            return prediction_service.generate_forecast_timeline("Mumbai", location_name, base_rainfall_mm, db)
-
-        # Retrieve screening results to obtain baseline observations
+        # Mumbai: generate timeline strictly mapped to screening engine horizons (+1h, +3h, +6h)
         sc = mumbai_waterlogging_service.get_screening_results(horizon=3)
         loc_item = CityPredictionRouter.match_mumbai_location(
             sc["locations"],
@@ -294,48 +255,31 @@ class CityPredictionRouter:
             longitude=longitude,
         )
 
-        elevation_m = loc_item["elevation_m"]
-        drainage_ratio = 0.40 if elevation_m <= 10.0 else 0.60
-        hist_count = (
-            8 if "dadar" in loc_item["location_name"].lower()
-            else (9 if "kurla" in loc_item["location_name"].lower() else 3)
-        )
-
         now = datetime.now(timezone.utc)
         items = []
         for h in range(1, 7):
-            hourly_rain = base_rainfall_mm * (1.0 + (h - 1) * 0.15)
-            h_prob, h_cat, _ = compute_location_heuristic_risk(
-                elevation_m=elevation_m,
-                rainfall_mm=hourly_rain,
-                drainage_capacity_ratio=drainage_ratio,
-                historical_incident_count=hist_count,
-                horizon_hours=h,
-            )
+            mapped_h = 1 if h <= 1 else (3 if h <= 4 else 6)
+            h_status = loc_item.get(f"warning_{mapped_h}h", loc_item["warning_status"])
+            forecast_rain = loc_item.get(f"rain_next_{mapped_h}h_mm")
+
             items.append(
                 ForecastTimelineItem(
                     horizon_hours=h,
                     timestamp=(now + timedelta(hours=h)).isoformat(),
-                    risk_probability=h_prob,
-                    risk_category=h_cat,
-                    rainfall_forecast_mm=round(hourly_rain, 1),
-                    confidence_level=f"±{8 + h * 2}%"
+                    risk_probability=None,
+                    risk_category=h_status,
+                    rainfall_forecast_mm=forecast_rain,
+                    confidence_level="Experimental Screening (Unvalidated)",
                 )
             )
 
-        logger.info(
-            f"[AquaSignal:TimelineRouter] Generated 6h timeline for {loc_item['location_name']} "
-            f"(Elev: {elevation_m}m, base rain: {base_rainfall_mm}mm). "
-            f"+1h: {items[0].risk_probability}%, +3h: {items[2].risk_probability}%, +6h: {items[5].risk_probability}%"
-        )
-
         return ForecastTimelineResponse(
             city="Mumbai",
-            location_name=location_name,
+            location_name=loc_item["location_name"],
             timeline=items,
             generated_at=now.isoformat(),
-            model_id="mumbai_heuristic_screening_v1.2",
-            source="mumbai_heuristic_timeline",
+            model_id="mumbai_rainfall_warning_engine_v1.0",
+            source="mumbai_warning_engine",
         )
 
 city_prediction_router = CityPredictionRouter()

@@ -14,6 +14,8 @@ from app.api.routes.predictions import router as predictions_router
 from app.api.routes.reports import router as reports_router
 from app.api.routes.analytics import router as analytics_router
 from app.api.routes.cities import router as cities_router
+from app.api.routes.incidents import router as incidents_router
+from app.api.routes.routing import router as routing_router
 
 
 @asynccontextmanager
@@ -43,6 +45,13 @@ async def lifespan(app: FastAPI):
         model_service.initialize_models()
     except Exception as e:
         logger.error(f"Error during model initialization: {str(e)}")
+
+    try:
+        from app.services.incident_service import incident_service
+        incident_service.seed_demo_data()
+        logger.info("Demo incidents seeded successfully.")
+    except Exception as e:
+        logger.error(f"Error seeding demo data: {str(e)}")
 
     yield
 
@@ -99,6 +108,21 @@ app.include_router(predictions_router, prefix=settings.API_PREFIX)
 app.include_router(reports_router, prefix=settings.API_PREFIX)
 app.include_router(analytics_router, prefix=settings.API_PREFIX)
 app.include_router(cities_router, prefix=settings.API_PREFIX)
+app.include_router(incidents_router, prefix=settings.API_PREFIX)
+app.include_router(routing_router, prefix=settings.API_PREFIX)
+
+@app.get(f"{settings.API_PREFIX}/waterlogging/mumbai", tags=["Waterlogging"])
+def get_waterlogging_mumbai_alias(
+    hours: int = 3,
+    refresh: bool = False
+):
+    from app.services.city_prediction_router import city_prediction_router
+    if hours not in [1, 3, 6]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid horizon '{hours}'. Mumbai screening engine supports 1, 3, or 6 hours."
+        )
+    return city_prediction_router.get_mumbai_screening(horizon=hours, force_refresh=refresh)
 
 
 # Also expose /health at root level for common developer and load-balancer probes
@@ -111,6 +135,6 @@ def root():
         "version": settings.VERSION,
         "docs_url": "/docs",
         "health_check": f"{settings.API_PREFIX}/health",
-        "supported_cities": list(model_service.models.keys()),
+        "supported_cities": ["Mumbai", "Pune"],
         "status": "operational",
     }

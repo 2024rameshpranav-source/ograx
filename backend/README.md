@@ -30,22 +30,19 @@ Once started:
 
 ---
 
-## 2. Machine Learning Model Placement
+## 2. City Models & Warning Engines
 
-Place your trained machine learning model files in:
+AquaSignal routes predictions based on city architecture:
 
-```
-backend/app/models/
-  ├── mumbai_model.joblib   <-- Mumbai prediction model
-  └── pune_model.joblib     <-- Pune prediction model
-```
+1. **Pune Waterlogging ML Model**:
+   - Location: `backend/app/models/pune_model.joblib`
+   - Configurable path: `PUNE_MODEL_PATH` in `backend/.env`
+   - Supported serialization: `.joblib` or `.pkl`
 
-### Configurable Paths
-Model paths can be customized via environment variables in `backend/.env`:
-```ini
-MUMBAI_MODEL_PATH=backend/app/models/mumbai_model.joblib
-PUNE_MODEL_PATH=backend/app/models/pune_model.joblib
-```
+2. **Mumbai Rainfall Warning Engine**:
+   - Location: `backend/app/services/mumbai_engine/` and `backend/app/services/mumbai_prototype/`
+   - Real-time rule-based screening engine evaluating 1h, 3h, 6h, and 24h accumulations across 8 Mumbai corridors.
+   - Powered by Open-Meteo live forecasts and local historical reanalysis archives. Dedicated endpoints: `/api/cities/mumbai/waterlogging` and `/api/cities/mumbai/locations`.
 
 ### Supported Serialization Formats
 - `joblib` (`.joblib`) — recommended for Scikit-Learn pipelines

@@ -40,8 +40,8 @@ def test_match_mumbai_location_by_coordinates():
 
 def test_bandra_and_dadar_distinct_predictions_when_inputs_differ(client):
     """
-    Dadar has lower elevation (10.0m) and historical basin recurrence vs Bandra (15.0m).
-    Verify that Dadar produces higher risk probability than Bandra under identical rainfall.
+    Verify that Bandra and Dadar produce distinct location metadata, elevations,
+    and valid screening engine warning statuses without fabricated probabilities.
     """
     req_bandra = {
         "city": "Mumbai",
@@ -53,8 +53,6 @@ def test_bandra_and_dadar_distinct_predictions_when_inputs_differ(client):
         "features": {
             "rainfall_mm": 15.0,
             "elevation_m": 15.0,
-            "drainage_capacity_ratio": 0.65,
-            "historical_incident_count": 3
         }
     }
     resp_bandra = client.post("/api/predictions", json=req_bandra)
@@ -71,25 +69,27 @@ def test_bandra_and_dadar_distinct_predictions_when_inputs_differ(client):
         "features": {
             "rainfall_mm": 15.0,
             "elevation_m": 10.0,
-            "drainage_capacity_ratio": 0.40,
-            "historical_incident_count": 8
         }
     }
     resp_dadar = client.post("/api/predictions", json=req_dadar)
     assert resp_dadar.status_code == 200
     data_dadar = resp_dadar.json()
 
-    # Bandra and Dadar must have distinct probabilities reflecting their physical terrain and drainage
-    assert data_bandra["location_name"] == "Mumbai · Bandra"
-    assert data_dadar["location_name"] == "Mumbai · Dadar"
-    assert data_dadar["risk_probability"] > data_bandra["risk_probability"]
+    # Bandra and Dadar must have distinct locations, coordinates, and elevations
+    assert data_bandra["location_name"] == "Bandra" or "Bandra" in data_bandra["location_name"]
+    assert data_dadar["location_name"] == "Dadar" or "Dadar" in data_dadar["location_name"]
     assert data_dadar["details"]["elevation_m"] == 10.0
     assert data_bandra["details"]["elevation_m"] == 15.0
+    # Probabilities must be None (unvalidated warning engine)
+    assert data_bandra["risk_probability"] is None
+    assert data_dadar["risk_probability"] is None
+    assert data_bandra["risk_category"] in ["NO_RAINFALL_SIGNAL", "LOW_RAINFALL_SIGNAL", "RAINFALL_WATCH", "DATA_CHECK_REQUIRED"]
+    assert data_dadar["risk_category"] in ["NO_RAINFALL_SIGNAL", "LOW_RAINFALL_SIGNAL", "RAINFALL_WATCH", "DATA_CHECK_REQUIRED"]
 
 def test_timeline_location_consistency_and_horizon_match(client):
     """
     Test that the 6h forecast timeline for a location is location-specific,
-    and that the 3h timeline entry probability matches the horizon=3 prediction.
+    and returns valid warning engine statuses without fabricated probabilities.
     """
     resp_bandra_tl = client.get("/api/predictions/Mumbai/forecast?location_name=Mumbai%20%C2%B7%20Bandra&base_rainfall_mm=10.0")
     assert resp_bandra_tl.status_code == 200
@@ -99,25 +99,28 @@ def test_timeline_location_consistency_and_horizon_match(client):
     assert resp_dadar_tl.status_code == 200
     tl_dadar = resp_dadar_tl.json()
 
-    # Dadar timeline probabilities should exceed Bandra's at each hour due to 10m vs 15m elevation
     assert len(tl_bandra["timeline"]) == 6
     assert len(tl_dadar["timeline"]) == 6
+    assert tl_bandra["location_name"] == "Bandra"
+    assert tl_dadar["location_name"] == "Dadar"
+
     for h in range(6):
-        assert tl_dadar["timeline"][h]["risk_probability"] > tl_bandra["timeline"][h]["risk_probability"]
+        assert tl_dadar["timeline"][h]["risk_probability"] is None
+        assert tl_bandra["timeline"][h]["risk_probability"] is None
+        assert tl_dadar["timeline"][h]["risk_category"] in [
+            "NO_RAINFALL_SIGNAL", "LOW_RAINFALL_SIGNAL", "RAINFALL_WATCH", "DATA_CHECK_REQUIRED"
+        ]
 
     # Verify that Dadar at +3h matches POST /api/predictions for Dadar at +3h
-    h3_prob = tl_dadar["timeline"][2]["risk_probability"]
     req = {
         "city": "Mumbai",
         "location_name": "Dadar",
         "forecast_horizon_hours": 3,
         "features": {
-            "rainfall_mm": tl_dadar["timeline"][2]["rainfall_forecast_mm"],
-            "elevation_m": 10.0,
-            "drainage_capacity_ratio": 0.40,
-            "historical_incident_count": 8
+            "rainfall_mm": 10.0,
         }
     }
     pred_resp = client.post("/api/predictions", json=req)
     assert pred_resp.status_code == 200
-    assert pred_resp.json()["risk_probability"] == h3_prob
+    assert pred_resp.json()["risk_probability"] is None
+    assert pred_resp.json()["risk_category"] == tl_dadar["timeline"][2]["risk_category"]

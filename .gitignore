@@ -30,4 +30,6 @@ backend/app/models/*.pickle
 backend/.pytest_cache/
 __pycache__/
 *.pyc
+backend/app/data/uploads/*
+!backend/app/data/uploads/.gitkeep
 

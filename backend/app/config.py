@@ -45,7 +45,6 @@ class Settings(BaseSettings):
         return ["*"]
 
     # Model file paths (configurable via environment variables)
-    MUMBAI_MODEL_PATH: str = str(BACKEND_DIR / "app" / "models" / "mumbai_model.joblib")
     PUNE_MODEL_PATH: str = str(BACKEND_DIR / "app" / "models" / "pune_model.joblib")
 
     DATABASE_URL: str = f"sqlite:///{BACKEND_DIR / 'app' / 'data' / 'aquasignal.db'}"
@@ -103,7 +102,7 @@ class Settings(BaseSettings):
     }
 
     model_config = SettingsConfigDict(
-        env_file=str(BACKEND_DIR / ".env"),
+        env_file=(str(BACKEND_DIR / ".env"), str(BACKEND_DIR.parent / ".env")),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore"

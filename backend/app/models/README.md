@@ -2,15 +2,17 @@
 
 Place your trained machine learning model files in this directory.
 
-## Expected Files
-
-1. **Mumbai Waterlogging Model**:
-   - Default path: `backend/app/models/mumbai_model.joblib`
-   - Configurable environment variable: `MUMBAI_MODEL_PATH`
-
-2. **Pune Waterlogging Model**:
+## Active Engines
+ 
+1. **Pune Waterlogging ML Model**:
    - Default path: `backend/app/models/pune_model.joblib`
    - Configurable environment variable: `PUNE_MODEL_PATH`
+   - Trained machine learning model for Pune junction waterlogging risk.
+
+2. **Mumbai Rainfall Warning Engine**:
+   - Location: `backend/app/services/mumbai_engine/` and `backend/app/services/mumbai_prototype/`
+   - Experimental rule-based screening engine evaluating 1h, 3h, 6h, and 24h rainfall thresholds across 8 Mumbai locations.
+   - Does not require a .joblib model file; uses calibrated rainfall thresholds and Open-Meteo live/reanalysis feeds.
 
 ## Supported Formats
 

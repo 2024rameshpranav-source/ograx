@@ -464,9 +464,13 @@ export function calculateSegmentPrediction(
 
     const histScore = Math.min(15.0, hist * 2.0);
 
-    const rawTotal = elevScore + rainScore + drainScore + histScore;
+    // Physical realism: without rainfall, surface waterlogging probability is minimal
+    // Vulnerability factors (elevation, drainage, history) scale with rainfall intensity
+    const rainIntensityFactor = baseRainfallMm <= 0.2 ? 0.12 : Math.min(1.0, Math.max(0.2, hourlyRain / 8.0));
+    const effectiveTerrainVulnerability = (elevScore + drainScore + histScore) * rainIntensityFactor;
+    const rawTotal = effectiveTerrainVulnerability + rainScore;
     const horizonMultiplier = 1.0 + (h - 1) * 0.05;
-    const prob = Math.max(5, Math.min(95, Math.round(rawTotal * horizonMultiplier)));
+    const prob = Math.max(4, Math.min(95, Math.round(rawTotal * horizonMultiplier)));
 
     let cat: "Low" | "Moderate" | "High" | "Severe" = "Low";
     if (prob >= 80) cat = "Severe";

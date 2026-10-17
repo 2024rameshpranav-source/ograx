@@ -71,11 +71,21 @@ class MongoDBManager:
             self.client.admin.command("ping")
             self._last_ping_latency_ms = round((time.time() - t0) * 1000, 2)
 
-            db_name = getattr(settings, "MONGODB_DB_NAME", "aquasignal")
-            self.db = self.client[db_name]
+            # Resolve target database: prioritize URI database if specified, else settings.MONGODB_DB_NAME
+            target_db_name = getattr(settings, "MONGODB_DB_NAME", "aquasignal")
+            try:
+                uri_default_db = self.client.get_default_database()
+                if uri_default_db is not None and uri_default_db.name:
+                    self.db = uri_default_db
+                    target_db_name = uri_default_db.name
+                else:
+                    self.db = self.client[target_db_name]
+            except Exception:
+                self.db = self.client[target_db_name]
+
             self._connected = True
             self._connection_error = None
-            logger.info(f"MongoDB Atlas connected successfully to database '{db_name}' (ping: {self._last_ping_latency_ms} ms)")
+            logger.info(f"MongoDB Atlas connected successfully to database '{target_db_name}' (ping: {self._last_ping_latency_ms} ms)")
 
             # Initialize indexes
             self._ensure_indexes()
@@ -83,19 +93,28 @@ class MongoDBManager:
 
         except (ConnectionFailure, ServerSelectionTimeoutError) as e:
             self._connected = False
-            self._connection_error = f"Atlas connection failed: {str(e)}"
-            logger.warning(f"Could not reach MongoDB Atlas cluster: {str(e)}. Using SQLite fallback.")
+            clean_err = self.sanitize_error(str(e))
+            self._connection_error = f"Atlas connection failed: {clean_err}"
+            logger.warning(f"Could not reach MongoDB Atlas cluster: {clean_err}. Using SQLite fallback.")
             return False
         except PyMongoError as e:
             self._connected = False
-            self._connection_error = f"MongoDB error: {str(e)}"
-            logger.error(f"MongoDB Atlas error: {str(e)}. Using SQLite fallback.")
+            clean_err = self.sanitize_error(str(e))
+            self._connection_error = f"MongoDB error: {clean_err}"
+            logger.error(f"MongoDB Atlas error: {clean_err}. Using SQLite fallback.")
             return False
         except Exception as e:
             self._connected = False
-            self._connection_error = f"Unexpected error connecting to MongoDB: {str(e)}"
-            logger.error(f"Unexpected MongoDB connection error: {str(e)}")
+            clean_err = self.sanitize_error(str(e))
+            self._connection_error = f"Unexpected error connecting to MongoDB: {clean_err}"
+            logger.error(f"Unexpected MongoDB connection error: {clean_err}")
             return False
+
+    @staticmethod
+    def sanitize_error(msg: str) -> str:
+        """Removes sensitive credentials if embedded in driver error messages."""
+        import re
+        return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", str(msg))
 
     def ping(self) -> Dict[str, Any]:
         """
@@ -121,7 +140,7 @@ class MongoDBManager:
                     "status": "connection_failed",
                     "database": getattr(settings, "MONGODB_DB_NAME", "aquasignal"),
                     "ping_ms": None,
-                    "message": self._connection_error or "Failed to connect to MongoDB Atlas.",
+                    "message": self.sanitize_error(self._connection_error or "Failed to connect to MongoDB Atlas."),
                 }
 
         try:
@@ -140,14 +159,15 @@ class MongoDBManager:
             }
         except Exception as e:
             self._connected = False
-            self._connection_error = str(e)
+            clean_err = self.sanitize_error(str(e))
+            self._connection_error = clean_err
             return {
                 "configured": True,
                 "connected": False,
                 "status": "ping_failed",
                 "database": getattr(settings, "MONGODB_DB_NAME", "aquasignal"),
                 "ping_ms": None,
-                "message": f"Ping failed: {str(e)}",
+                "message": f"Ping failed: {clean_err}",
             }
 
     def _ensure_indexes(self):
@@ -166,9 +186,18 @@ class MongoDBManager:
             predictions_col = self.db["predictions"]
             predictions_col.create_index([("city", ASCENDING), ("created_at", DESCENDING)])
             predictions_col.create_index([("location_name", ASCENDING)])
-            logger.info("MongoDB Atlas indexes ensured for 'reports' and 'predictions' collections.")
+
+            incidents_col = self.db["incidents"]
+            incidents_col.create_index([("id", ASCENDING)], unique=True)
+            incidents_col.create_index([("city", ASCENDING), ("submitted_at", DESCENDING)])
+            incidents_col.create_index([("verification_status", ASCENDING)])
+            incidents_col.create_index([("predicted_class", ASCENDING)])
+            incidents_col.create_index([("is_demo", ASCENDING)])
+            incidents_col.create_index([("location", GEOSPHERE)])
+
+            logger.info("MongoDB Atlas indexes ensured for 'reports', 'predictions', and 'incidents' collections.")
         except Exception as e:
-            logger.warning(f"Warning creating MongoDB indexes: {str(e)}")
+            logger.warning(f"Warning creating MongoDB indexes: {self.sanitize_error(str(e))}")
 
     def get_collection(self, name: str) -> Optional[Collection]:
         if not self._connected or self.db is None:

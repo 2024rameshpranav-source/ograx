@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.config import settings
 from app.db.session import Base, get_db
-from app.db.models import ReportDB, PredictionDB  # noqa: F401
+from app.db.models import ReportDB, PredictionDB, IncidentDB  # noqa: F401
 from app.services.model_service import model_service
 
 # In-memory SQLite database for testing with StaticPool so all sessions share the same in-memory DB
@@ -52,9 +52,14 @@ class MockFailingModelDouble:
     def predict_proba(self, X):
         raise RuntimeError("Simulated matrix singularity or NaN error during inference.")
 
+from app.db.mongodb import mongo_manager
+
 @pytest.fixture(autouse=True)
-def setup_test_db():
+def setup_test_db(monkeypatch, request):
     Base.metadata.create_all(bind=engine)
+    if "test_mongodb" not in str(request.node.fspath):
+        monkeypatch.setattr(mongo_manager, "_connected", False)
+        monkeypatch.setattr(mongo_manager, "get_collection", lambda name: None)
     yield
     Base.metadata.drop_all(bind=engine)
 
@@ -81,23 +86,23 @@ def client(setup_test_db) -> Generator[TestClient, None, None]:
     app.dependency_overrides.clear()
 
 @pytest.fixture
-def mock_mumbai_model():
-    """Injects a mock model into Mumbai's slot in model_service."""
-    orig_model = model_service.models["Mumbai"].model
-    orig_is_loaded = model_service.models["Mumbai"].is_loaded
-    orig_has_proba = model_service.models["Mumbai"].has_predict_proba
-    orig_features = model_service.models["Mumbai"].expected_features
+def mock_pune_model():
+    """Injects a mock model into Pune's slot in model_service."""
+    orig_model = model_service.models["Pune"].model
+    orig_is_loaded = model_service.models["Pune"].is_loaded
+    orig_has_proba = model_service.models["Pune"].has_predict_proba
+    orig_features = model_service.models["Pune"].expected_features
 
     mock_obj = MockModelDouble(fixed_proba=0.85)
-    model_service.models["Mumbai"].model = mock_obj
-    model_service.models["Mumbai"].is_loaded = True
-    model_service.models["Mumbai"].has_predict_proba = True
-    model_service.models["Mumbai"].expected_features = list(mock_obj.feature_names_in_)
+    model_service.models["Pune"].model = mock_obj
+    model_service.models["Pune"].is_loaded = True
+    model_service.models["Pune"].has_predict_proba = True
+    model_service.models["Pune"].expected_features = list(mock_obj.feature_names_in_)
 
     yield mock_obj
 
     # Teardown: restore original state
-    model_service.models["Mumbai"].model = orig_model
-    model_service.models["Mumbai"].is_loaded = orig_is_loaded
-    model_service.models["Mumbai"].has_predict_proba = orig_has_proba
-    model_service.models["Mumbai"].expected_features = orig_features
+    model_service.models["Pune"].model = orig_model
+    model_service.models["Pune"].is_loaded = orig_is_loaded
+    model_service.models["Pune"].has_predict_proba = orig_has_proba
+    model_service.models["Pune"].expected_features = orig_features

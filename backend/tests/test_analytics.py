@@ -8,7 +8,7 @@ def test_analytics_overview_empty(client):
     assert data["latest_prediction"] is None
     assert "models_status" in data
 
-def test_analytics_overview_populated(client, mock_mumbai_model):
+def test_analytics_overview_populated(client):
     # Add a report
     client.post("/api/reports", json={
         "city": "Mumbai",
@@ -58,7 +58,7 @@ def test_analytics_incidents(client):
     assert data["by_severity"]["Severe"] == 1
     assert data["by_access"]["Not passable"] == 1
 
-def test_analytics_locations(client, mock_mumbai_model):
+def test_analytics_locations(client):
     client.post("/api/predictions", json={
         "city": "Mumbai",
         "location_id": "LOC-HND",

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import * as L from "leaflet";
 import { apiClient, type MumbaiScreeningResponse, type MumbaiLocationScreening, type MumbaiWarningStatus } from "../services/api";
 import { appConfig } from "../config";
@@ -19,6 +19,9 @@ export default function MumbaiScreeningSection({
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<MumbaiLocationScreening | null>(null);
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+
   const mapContainerRef = React.useRef<HTMLDivElement>(null);
   const mapInstanceRef = React.useRef<L.Map | null>(null);
   const markersLayerRef = React.useRef<L.LayerGroup | null>(null);
@@ -55,6 +58,32 @@ export default function MumbaiScreeningSection({
     setHorizon(h);
     if (onHorizonChange) onHorizonChange(h);
   };
+
+  // Filter locations based on search and status
+  const filteredLocations = useMemo(() => {
+    if (!data?.locations) return [];
+    return data.locations.filter((loc) => {
+      const matchesSearch =
+        loc.location_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        loc.location_id.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesStatus =
+        statusFilter === "ALL" || loc.warning_status === statusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [data?.locations, searchQuery, statusFilter]);
+
+  // Overview summary KPI statistics
+  const kpis = useMemo(() => {
+    const locs = data?.locations || [];
+    const watchCount = locs.filter((l) => l.warning_status === "RAINFALL_WATCH").length;
+    const max24h = locs.length > 0 ? Math.max(...locs.map((l) => l.rain_last_24h_mm ?? 0)) : 0;
+    return {
+      total: locs.length || 8,
+      watches: watchCount,
+      max24h: max24h.toFixed(1),
+      status: "Unvalidated Rule-Based",
+    };
+  }, [data?.locations]);
 
   // Initialize and update Leaflet Map
   useEffect(() => {
@@ -184,15 +213,41 @@ export default function MumbaiScreeningSection({
         </div>
       </div>
 
+      {/* KPI Overview Cards */}
+      <div className="mumbai-kpi-grid">
+        <div className="mumbai-kpi-card">
+          <small>Monitored Corridors</small>
+          <strong>{kpis.total} Locations</strong>
+          <span>Andheri, Bandra, Kurla, Dadar, Sion, Powai, Chembur, Colaba</span>
+        </div>
+        <div className="mumbai-kpi-card">
+          <small>Active Rainfall Watches</small>
+          <strong style={{ color: kpis.watches > 0 ? "#dc2626" : "#0f766e" }}>
+            {kpis.watches} {kpis.watches === 1 ? "Corridor" : "Corridors"}
+          </strong>
+          <span>Screened against +{horizon}h threshold</span>
+        </div>
+        <div className="mumbai-kpi-card">
+          <small>Peak 24h Precipitation</small>
+          <strong>{kpis.max24h} mm</strong>
+          <span>Highest accumulation in 24h window</span>
+        </div>
+        <div className="mumbai-kpi-card">
+          <small>Model Type & Validation</small>
+          <strong style={{ fontSize: "14px", color: "#b45309" }}>Rule-Based (Unvalidated)</strong>
+          <span>No probability invented · No ML weights</span>
+        </div>
+      </div>
+
       {/* Mandatory Transparency Notice */}
       <div className="mumbai-transparency-callout">
         <div className="mumbai-callout-icon">ℹ️</div>
         <div className="mumbai-callout-body">
           <strong>Experimental Rule-Based Screening — 8 Mumbai Ground Locations</strong>
           <p>
-            This engine screens forecast and recent rainfall against experimental thresholds.
-            It does <strong>not</strong> calculate or claim a numerical waterlogging probability.
-            Zero rainfall does not imply zero road waterlogging risk.
+            This engine screens forecast and recent rainfall against experimental thresholds
+            (1h: 5mm, 3h: 10mm, 6h: 20mm, 24h: 30mm). It does <strong>not</strong> calculate or claim a numerical
+            waterlogging probability. Zero rainfall does not guarantee absence of local drainage blockages.
           </p>
         </div>
         {data && (
@@ -211,20 +266,52 @@ export default function MumbaiScreeningSection({
         </div>
       )}
 
+      {/* Filter Toolbar */}
+      <div className="mumbai-filter-toolbar">
+        <input
+          type="text"
+          className="mumbai-search-input"
+          placeholder="🔍 Search Mumbai locations (e.g. Andheri, Dadar, Kurla)..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+        />
+        <div className="mumbai-status-filters">
+          {[
+            { id: "ALL", label: `All (${data?.locations.length || 8})` },
+            { id: "RAINFALL_WATCH", label: "⚠️ Watch" },
+            { id: "LOW_RAINFALL_SIGNAL", label: "💧 Low Signal" },
+            { id: "NO_RAINFALL_SIGNAL", label: "✓ No Signal" },
+          ].map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`mumbai-filter-chip ${statusFilter === f.id ? "active" : ""}`}
+              onClick={() => setStatusFilter(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Main 2-Column Layout: 8 Location Grid & Interactive Screening Map */}
       <div className="mumbai-dashboard-grid">
-        {/* Left Column: 8 Location Cards */}
+        {/* Left Column: Location Cards */}
         <div className="mumbai-locations-col">
           <div className="mumbai-section-title">
-            <h3>Monitored Corridors ({data?.locations.length || 8})</h3>
+            <h3>Monitored Corridors ({filteredLocations.length})</h3>
             <span className="mumbai-count-pill">+{horizon}h Outlook</span>
           </div>
 
           <div className="mumbai-cards-list">
             {loading && !data ? (
               <div className="mumbai-loading">Screening Mumbai locations…</div>
+            ) : filteredLocations.length === 0 ? (
+              <div style={{ padding: "24px", textAlign: "center", color: "#64748b", background: "#f8fafc", borderRadius: "8px" }}>
+                No corridors match filter criteria: <b>{searchQuery || statusFilter}</b>
+              </div>
             ) : (
-              data?.locations.map((loc) => {
+              filteredLocations.map((loc) => {
                 const isSelected = selectedLocation?.location_id === loc.location_id;
                 return (
                   <div
@@ -274,8 +361,28 @@ export default function MumbaiScreeningSection({
                       </div>
                     </div>
 
+                    {/* Multi-Horizon Accumulation Breakdown */}
+                    <div className="mumbai-horizon-breakdown-row">
+                      <div className="mumbai-horizon-badge">
+                        <span>Past 1h</span>
+                        <b>{loc.rain_last_1h_mm !== null && loc.rain_last_1h_mm !== undefined ? `${loc.rain_last_1h_mm.toFixed(1)}mm` : "N/A"}</b>
+                      </div>
+                      <div className="mumbai-horizon-badge">
+                        <span>Past 3h</span>
+                        <b>{loc.rain_last_3h_mm !== null && loc.rain_last_3h_mm !== undefined ? `${loc.rain_last_3h_mm.toFixed(1)}mm` : "N/A"}</b>
+                      </div>
+                      <div className="mumbai-horizon-badge">
+                        <span>Past 6h</span>
+                        <b>{loc.rain_last_6h_mm !== null && loc.rain_last_6h_mm !== undefined ? `${loc.rain_last_6h_mm.toFixed(1)}mm` : "N/A"}</b>
+                      </div>
+                      <div className="mumbai-horizon-badge">
+                        <span>Past 24h</span>
+                        <b>{loc.rain_last_24h_mm !== null && loc.rain_last_24h_mm !== undefined ? `${loc.rain_last_24h_mm.toFixed(1)}mm` : "N/A"}</b>
+                      </div>
+                    </div>
+
                     {/* Factual human-readable explanation */}
-                    <p className="mumbai-explanation">{loc.explanation}</p>
+                    <p className="mumbai-explanation" style={{ marginTop: "8px" }}>{loc.explanation}</p>
 
                     {/* Distinct Hotspot Context */}
                     <div className="mumbai-hotspot-box">
@@ -342,6 +449,16 @@ export default function MumbaiScreeningSection({
                 <div>
                   <small>Weather Provider</small>
                   <strong>{selectedLocation.data_source}</strong>
+                </div>
+              </div>
+
+              <div style={{ background: "#f8fafc", borderRadius: "6px", padding: "8px 10px", marginBottom: "12px", border: "1px solid #e2e8f0" }}>
+                <span style={{ fontSize: "9px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Calibrated Threshold Reference</span>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "4px", marginTop: "4px", fontSize: "10px" }}>
+                  <div>1h Watch: <b>≥ 5.0 mm</b></div>
+                  <div>3h Watch: <b>≥ 10.0 mm</b></div>
+                  <div>6h Watch: <b>≥ 20.0 mm</b></div>
+                  <div>24h Watch: <b>≥ 30.0 mm</b></div>
                 </div>
               </div>
 

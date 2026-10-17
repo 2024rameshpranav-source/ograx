@@ -632,7 +632,7 @@ export default function OperationalPictureSection({ openApp }: { openApp: () => 
                 <div className="op-hud-status">
                   <span className="op-radar-pulse"></span>
                   <strong>MUMBAI HYDROLOGICAL DIGITAL TWIN</strong>
-                  <span className="op-hud-sub">Model v0.9 · Live Grid Resolution 150m</span>
+                  <span className="op-hud-sub">Illustrative Scenario Demonstration · Prototype Spatial Grid</span>
                 </div>
                 <div className="op-hud-toggles">
                   <button

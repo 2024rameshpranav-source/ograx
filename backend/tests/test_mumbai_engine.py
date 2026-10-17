@@ -208,3 +208,46 @@ def test_prototype_standalone_engine_schema_compatibility():
         "warning_6h": "LOW_RAINFALL_SIGNAL",
     }
     assert prototype_overall_status(row_status) == "RAINFALL_WATCH"
+
+def test_mumbai_api_full_warning_engine_schema(client):
+    """
+    Verifies that GET /api/cities/mumbai/waterlogging delivers the exact fields required
+    by the final Mumbai warning engine for all 8 locations across 1h, 3h, 6h, and 24h horizons.
+    """
+    response = client.get("/api/cities/mumbai/waterlogging?hours=3")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["city"] == "mumbai"
+    assert data["prediction_type"] == "rule_based_rainfall_screening"
+    assert data["validation_status"] == "NOT_VALIDATED"
+    assert data["warning_engine_status"] == "RULE_BASED_PROTOTYPE_NOT_VALIDATED"
+    assert len(data["locations"]) == 8
+
+    required_locations = {"Andheri", "Bandra", "Kurla", "Dadar", "Sion", "Powai", "Chembur", "Colaba"}
+    found_locations = {loc["location_name"] for loc in data["locations"]}
+    assert required_locations == found_locations
+
+    for loc in data["locations"]:
+        # Must preserve waterlogging_probability as None (unvalidated)
+        assert loc["waterlogging_probability"] is None
+        assert loc["model_validation_status"] == "NOT_VALIDATED"
+        assert loc["warning_engine_status"] == "RULE_BASED_PROTOTYPE_NOT_VALIDATED"
+
+        # Check all required rainfall accumulation metrics
+        assert "rain_last_1h_mm" in loc
+        assert "rain_last_3h_mm" in loc
+        assert "rain_last_6h_mm" in loc
+        assert "rain_last_24h_mm" in loc
+        assert "rain_next_1h_mm" in loc
+        assert "rain_next_3h_mm" in loc
+        assert "rain_next_6h_mm" in loc
+
+        # Check multi-horizon warning classifications
+        assert loc["warning_1h"] in ["NO_RAINFALL_SIGNAL", "LOW_RAINFALL_SIGNAL", "RAINFALL_WATCH", "DATA_CHECK_REQUIRED"]
+        assert loc["warning_3h"] in ["NO_RAINFALL_SIGNAL", "LOW_RAINFALL_SIGNAL", "RAINFALL_WATCH", "DATA_CHECK_REQUIRED"]
+        assert loc["warning_6h"] in ["NO_RAINFALL_SIGNAL", "LOW_RAINFALL_SIGNAL", "RAINFALL_WATCH", "DATA_CHECK_REQUIRED"]
+        assert loc["overall_screening_status"] in ["NO_RAINFALL_SIGNAL", "LOW_RAINFALL_SIGNAL", "RAINFALL_WATCH", "DATA_CHECK_REQUIRED"]
+        assert loc["screening_status"] == loc["warning_3h"]
+        assert "explanation" in loc
+        assert "hotspot_evidence" in loc

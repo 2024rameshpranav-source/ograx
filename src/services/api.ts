@@ -80,15 +80,30 @@ export interface MumbaiLocationScreening {
   longitude: number;
   elevation_m: number;
   warning_status: MumbaiWarningStatus;
+  warning_1h?: MumbaiWarningStatus;
+  warning_3h?: MumbaiWarningStatus;
+  warning_6h?: MumbaiWarningStatus;
+  overall_screening_status?: MumbaiWarningStatus;
+  screening_status?: MumbaiWarningStatus;
+  screening_basis?: string;
   recent_rainfall_mm: number | null;
   forecast_rainfall_mm: number | null;
+  rain_last_1h_mm?: number | null;
+  rain_last_3h_mm?: number | null;
+  rain_last_6h_mm?: number | null;
   rain_last_24h_mm: number | null;
+  rain_next_1h_mm?: number | null;
+  rain_next_3h_mm?: number | null;
+  rain_next_6h_mm?: number | null;
   thresholds: { forecast: number; recent: number };
+  all_thresholds?: Record<number, { forecast: number; recent: number }>;
   explanation: string;
   data_status: string;
   data_source: string;
   observation_time: string;
   waterlogging_probability: null;
+  model_validation_status?: string;
+  warning_engine_status?: string;
   hotspot_evidence: MumbaiHotspotEvidence;
 }
 
@@ -328,5 +343,326 @@ export const apiClient = {
     if (refresh) params.append("refresh", "true");
     return fetchJson<MumbaiScreeningResponse>(`/api/cities/mumbai/waterlogging?${params}`);
   },
+
+  /**
+   * Run Hugging Face model inference on captured/uploaded incident image
+   */
+  async analyzeIncidentPhoto(file: File): Promise<IncidentAnalyzeResponse> {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const url = `${API_BASE}/api/incidents/analyze`;
+    const response = await fetch(url, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      let errorDetail = `AI analysis failed (HTTP ${response.status})`;
+      try {
+        const errorJson = await response.json();
+        if (errorJson.detail) errorDetail = errorJson.detail;
+      } catch {
+        // ignore
+      }
+      throw new Error(errorDetail);
+    }
+    return response.json();
+  },
+
+  /**
+   * Submit new confirmed incident to historical intelligence database
+   */
+  async createIncident(request: IncidentCreateRequest): Promise<IncidentResponse> {
+    return fetchJson<IncidentResponse>("/api/incidents", {
+      method: "POST",
+      body: JSON.stringify(request),
+    });
+  },
+
+  /**
+   * Retrieve historical incident reports
+   */
+  async getIncidents(params?: {
+    city?: string;
+    status?: string;
+    is_demo?: boolean;
+    skip?: number;
+    limit?: number;
+  }): Promise<{ total: number; skip: number; limit: number; incidents: IncidentResponse[] }> {
+    const searchParams = new URLSearchParams();
+    if (params?.city) searchParams.append("city", params.city);
+    if (params?.status && params.status !== "ALL") searchParams.append("status", params.status);
+    if (params?.is_demo !== undefined) searchParams.append("is_demo", String(params.is_demo));
+    if (params?.skip !== undefined) searchParams.append("skip", String(params.skip));
+    if (params?.limit !== undefined) searchParams.append("limit", String(params.limit));
+
+    const q = searchParams.toString();
+    return fetchJson(`/api/incidents/history${q ? `?${q}` : ""}`);
+  },
+
+  /**
+   * Retrieve single incident details
+   */
+  async getIncidentById(incidentId: string): Promise<IncidentResponse> {
+    return fetchJson<IncidentResponse>(`/api/incidents/${encodeURIComponent(incidentId)}`);
+  },
+
+  /**
+   * Submit reviewer ground truth label and verification status
+   */
+  async reviewIncident(incidentId: string, review: IncidentReviewRequest): Promise<IncidentResponse> {
+    return fetchJson<IncidentResponse>(`/api/incidents/${encodeURIComponent(incidentId)}/review`, {
+      method: "PATCH",
+      body: JSON.stringify(review),
+    });
+  },
+
+  /**
+   * Calculate dynamic location risk with report-derived adjustments
+   */
+  async getAreaDynamicRisk(params: {
+    city?: string;
+    location_name?: string;
+    latitude: number;
+    longitude: number;
+    radius_km?: number;
+  }): Promise<DynamicRiskResponse> {
+    const searchParams = new URLSearchParams({
+      city: params.city || "Mumbai",
+      location_name: params.location_name || "Location",
+      latitude: String(params.latitude),
+      longitude: String(params.longitude),
+      radius_km: String(params.radius_km || 1.5),
+    });
+    return fetchJson<DynamicRiskResponse>(`/api/incidents/risk/area?${searchParams}`);
+  },
+
+  /**
+   * Fetch model evaluation accuracy metrics
+   */
+  async getModelEvaluation(includeDemo: boolean = true): Promise<ModelEvaluationResponse> {
+    return fetchJson<ModelEvaluationResponse>(`/api/incidents/models/evaluation?include_demo=${includeDemo}`);
+  },
+
+  /**
+   * Fetch demonstration dataset summary
+   */
+  async getDemoSummary(): Promise<DemoSummaryResponse> {
+    return fetchJson<DemoSummaryResponse>("/api/incidents/demo/summary");
+  },
+
+  /**
+   * Seed demonstration dataset
+   */
+  async seedDemoIncidents(): Promise<{ success: boolean; message: string; demo_count: number }> {
+    return fetchJson("/api/incidents/demo/seed", { method: "POST" });
+  },
+
+  /**
+   * Reset demonstration dataset
+   */
+  async resetDemoIncidents(): Promise<{ success: boolean; message: string; deleted_count: number }> {
+    return fetchJson("/api/incidents/demo/reset", { method: "POST" });
+  },
+
+  /**
+   * Fetch commuter corridor presets for a city
+   */
+  async getRoutePresets(city?: string): Promise<RoutePreset[]> {
+    const q = city ? `?city=${encodeURIComponent(city)}` : "";
+    return fetchJson(`/api/routes/presets${q}`);
+  },
+
+  /**
+   * Calculate waterlogging-aware route recommendations
+   */
+  async getRouteRecommendations(request: RouteRequest): Promise<RouteComparisonResponse> {
+    return fetchJson("/api/routes/recommendations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request),
+    });
+  },
 };
+
+export interface IncidentAnalyzeResponse {
+  success: boolean;
+  model_name: string;
+  predicted_class: "Flooded Scene" | "Non Flooded";
+  model_score: number;
+  class_probabilities: Record<string, number>;
+  is_flooded: boolean;
+  confidence_level: "HIGH" | "MODERATE" | "LOW";
+  image_reference?: string;
+  warning_note?: string;
+}
+
+export interface IncidentCreateRequest {
+  city: string;
+  location_name: string;
+  latitude: number;
+  longitude: number;
+  captured_at?: string;
+  image_reference?: string;
+  predicted_class: string;
+  model_score: number;
+  source_type?: string;
+  is_demo?: boolean;
+  notes?: string;
+}
+
+export interface IncidentResponse {
+  id: string;
+  city: string;
+  location_name: string;
+  latitude: number;
+  longitude: number;
+  captured_at: string;
+  submitted_at: string;
+  image_reference?: string;
+  predicted_class: string;
+  model_score: number;
+  model_name: string;
+  verification_status: "PENDING" | "VERIFIED_GENUINE" | "VERIFIED_NON_WATERLOGGING" | "INCONCLUSIVE" | "REJECTED" | "DUPLICATE";
+  source_type: string;
+  is_demo: boolean;
+  duplicate_of?: string;
+  baseline_risk_score: number;
+  report_risk_adjustment: number;
+  final_risk_score: number;
+  ground_truth_label?: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  reviewer_notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IncidentReviewRequest {
+  verification_status: "VERIFIED_GENUINE" | "VERIFIED_NON_WATERLOGGING" | "INCONCLUSIVE" | "REJECTED" | "DUPLICATE";
+  ground_truth_label?: "Flooded Scene" | "Non Flooded" | "Inconclusive";
+  reviewed_by: string;
+  reviewer_notes?: string;
+}
+
+export interface DynamicRiskResponse {
+  city: string;
+  location_name: string;
+  latitude: number;
+  longitude: number;
+  baseline_risk_score: number;
+  report_risk_adjustment: number;
+  final_risk_score: number;
+  active_incidents_count: number;
+  verified_genuine_count: number;
+  pending_ai_positive_count: number;
+  calculation_basis: string;
+  radius_km: number;
+}
+
+export interface ConfusionMatrixData {
+  true_positive: number;
+  false_positive: number;
+  true_negative: number;
+  false_negative: number;
+}
+
+export interface ModelEvaluationResponse {
+  model_name: string;
+  model_architecture: string;
+  evaluation_status: string;
+  dataset_type: string;
+  dataset_version: string;
+  total_samples: number;
+  labeled_samples: number;
+  confusion_matrix: ConfusionMatrixData;
+  accuracy: number | null;
+  precision: number | null;
+  recall: number | null;
+  f1_score: number | null;
+  disclaimer: string;
+}
+
+export interface DemoSummaryResponse {
+  total_incidents: number;
+  real_incidents_count: number;
+  demo_incidents_count: number;
+  verified_genuine_count: number;
+  verified_non_waterlogging_count: number;
+  pending_verification_count: number;
+  rejected_or_duplicate_count: number;
+  is_demo_mode_active: boolean;
+}
+
+export interface LatLngPoint {
+  latitude: number;
+  longitude: number;
+  name?: string;
+}
+
+export interface RouteRequest {
+  city: string;
+  origin: LatLngPoint;
+  destination: LatLngPoint;
+  prefer_alternatives?: boolean;
+  tolerance_meters?: number;
+  horizon_hours?: number;
+}
+
+export interface HazardIntersection {
+  hazard_type: "VERIFIED_WATERLOGGING" | "PENDING_AI_DETECTION" | "CITIZEN_REPORT" | "RAINFALL_WATCH";
+  location_name: string;
+  latitude: number;
+  longitude: number;
+  distance_to_route_meters: number;
+  severity_or_status: string;
+  reported_at?: string;
+  age_hours?: number;
+  description: string;
+  risk_points_contributed: number;
+}
+
+export interface RouteOption {
+  route_id: string;
+  summary_name: string;
+  distance_km: number;
+  duration_minutes: number;
+  coordinates: [number, number][];
+  risk_score: number;
+  risk_category: "LOWER_KNOWN_RISK" | "ELEVATED_RISK" | "HIGH_HAZARD" | "DATA_UNAVAILABLE";
+  is_recommended: boolean;
+  recommendation_reason: string;
+  hazard_count: number;
+  verified_waterlogging_count: number;
+  pending_ai_reports_count: number;
+  rainfall_watch_count: number;
+  hazards: HazardIntersection[];
+  data_freshness: string;
+  data_source: string;
+}
+
+export interface RouteComparisonResponse {
+  success: boolean;
+  city: string;
+  origin_name: string;
+  destination_name: string;
+  total_routes_found: number;
+  routes: RouteOption[];
+  recommended_route_id?: string;
+  screening_status_summary?: string;
+  calculation_methodology: string;
+  safety_disclaimer: string;
+  timestamp: string;
+}
+
+export interface RoutePreset {
+  id: string;
+  city: string;
+  name: string;
+  origin: LatLngPoint;
+  destination: LatLngPoint;
+  corridor_description: string;
+}
+
 

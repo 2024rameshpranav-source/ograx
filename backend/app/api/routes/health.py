@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from typing import Dict, Any, List
 from app.config import settings
-from app.services.model_service import model_service
+from app.services.model_service import model_service, SUPPORTED_CITIES
 from app.db.mongodb import mongo_manager
 
 router = APIRouter(tags=["Health & Configuration"])
@@ -32,7 +32,7 @@ def get_health() -> Dict[str, Any]:
         },
         "models_all_ready": all_ready,
         "models": models_status,
-        "supported_cities": list(model_service.models.keys()),
+        "supported_cities": SUPPORTED_CITIES,
     }
 
 @router.get("/health/mongodb", response_model=Dict[str, Any])
@@ -46,6 +46,6 @@ def ping_mongodb() -> Dict[str, Any]:
 def get_cities() -> Dict[str, Any]:
     """Returns supported cities and their respective model availability."""
     return {
-        "supported_cities": list(model_service.models.keys()),
+        "supported_cities": SUPPORTED_CITIES,
         "models": model_service.get_status_summary(),
     }

@@ -35,8 +35,8 @@ class PredictionResponse(BaseModel):
     location_id: Optional[str] = None
     location_name: Optional[str] = None
     forecast_horizon_hours: int
-    risk_probability: float = Field(..., ge=0.0, le=100.0, description="Predicted waterlogging probability percentage (0-100%)")
-    risk_category: str = Field(..., description="Categorized risk: 'Low', 'Moderate', 'High', or 'Critical'")
+    risk_probability: Optional[float] = Field(None, ge=0.0, le=100.0, description="Predicted waterlogging probability percentage (0-100%) or null if unvalidated screening")
+    risk_category: str = Field(..., description="Categorized risk or screening status")
     model_id: str
     prediction_timestamp: str
     input_freshness: str = "fresh"
@@ -47,7 +47,7 @@ class PredictionResponse(BaseModel):
 class ForecastTimelineItem(BaseModel):
     horizon_hours: int
     timestamp: str
-    risk_probability: float
+    risk_probability: Optional[float] = None
     risk_category: str
     rainfall_forecast_mm: Optional[float] = None
     confidence_level: str = "High"
